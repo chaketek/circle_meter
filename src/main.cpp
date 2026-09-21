@@ -10,6 +10,7 @@
 
 #include "can_driver.h"
 #include "config.h"
+#include "logo.h"
 #include "rusefi_decoder.h"
 #include "signal_store.h"
 #include "units.h"
@@ -105,6 +106,67 @@ void canHealthTask(void*) {
         g_can.poll(millis());
         vTaskDelay(pdMS_TO_TICKS(1000));
     }
+}
+
+// ---------------------------------------------------------------- 輝度
+/// DOC-23 §10: 輝度レベル 1-5 を PWM デューティへ。
+uint8_t brightnessPwm(uint8_t level) {
+    static const uint8_t kTable[5] = {26, 64, 128, 191, 255};
+    if (level < 1) {
+        level = 1;
+    }
+    if (level > 5) {
+        level = 5;
+    }
+    return kTable[level - 1];
+}
+
+/// バックライトを滑らかに変化させる。
+/// 画素を触らず PWM だけを動かすため、フェード中の CPU 負荷はほぼゼロで、
+/// かつ完全に均一なフェードになる（アルファ合成では 16bit 階調が破綻する）。
+void fadeBacklight(int from, int to, uint32_t durationMs) {
+    constexpr uint32_t kStepMs = 16;
+    const uint32_t steps       = durationMs / kStepMs;
+    for (uint32_t i = 0; i <= steps; ++i) {
+        const int v = from + (to - from) * static_cast<int>(i) / static_cast<int>(steps ? steps : 1);
+        M5Dial.Display.setBrightness(static_cast<uint8_t>(v));
+        delay(kStepMs);
+    }
+    M5Dial.Display.setBrightness(static_cast<uint8_t>(to));
+}
+
+// ---------------------------------------------------------------- オープニング画面
+// SYS-18 / SYS-19 / SWR-48 / DOC-23 §7
+//   0.0 - 0.4 s  フェードイン
+//   0.4 - 1.2 s  保持（CAN を受信済みなら 0.2 s に短縮する）
+//   1.2 - 1.5 s  フェードアウト
+// この間も CAN 受信タスクは Core 0 で動いている（SWD-09 の起動順序）。
+void showSplash(uint8_t targetLevel) {
+    auto& d = M5Dial.Display;
+
+    // 描き終わるまでバックライトは消したまま（起動時のちらつき・残像対策）
+    d.setBrightness(0);
+    d.fillScreen(TFT_BLACK);
+
+    const int x = (d.width() - cm_logo_width) / 2;
+    const int y = (d.height() - cm_logo_height) / 2 - 8;
+    d.pushImage(x, y, cm_logo_width, cm_logo_height, reinterpret_cast<const lgfx::rgb565_t*>(cm_logo_data));
+
+    d.setTextDatum(middle_center);
+    d.setTextSize(1);
+    d.setTextColor(TFT_DARKGREY, TFT_BLACK);
+    d.drawString("circle_meter", 120, 186);
+    d.drawString(CM_FW_VERSION, 120, 200);
+
+    const int target = brightnessPwm(targetLevel);
+    fadeBacklight(0, target, 400);
+
+    // SYS-18: ECU からの受信が既に始まっていれば長く見せる必要はない
+    const uint32_t holdMs = (g_can.stats().rxFrames > 0) ? 200 : 800;
+    delay(holdMs);
+
+    fadeBacklight(target, 0, 300);
+    d.fillScreen(TFT_BLACK);
 }
 
 // ---------------------------------------------------------------- 暫定 UI
@@ -236,7 +298,12 @@ void setup() {
     xTaskCreatePinnedToCore(canRxTask, "can_rx", 4096, nullptr, 10, nullptr, 0);
     xTaskCreatePinnedToCore(canHealthTask, "can_health", 3072, nullptr, 5, nullptr, 0);
 
-    M5Dial.Display.setBrightness(200);
+    // オープニング画面（SYS-18）。CAN 受信タスクは既に走っている。
+    showSplash(g_cfg.brightness);
+
+    // 最初の本画面を描いてからバックライトを戻す（黒画面の一瞬を見せない）
+    drawBringupScreen(g_store.snapshot(millis()));
+    fadeBacklight(0, brightnessPwm(g_cfg.brightness), 200);
 }
 
 void loop() {

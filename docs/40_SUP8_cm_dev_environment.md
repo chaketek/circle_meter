@@ -49,12 +49,17 @@
 | Python | 3.11 以降（確認済: 3.13） | `python --version` |
 | PlatformIO Core | 6.1 以降 | `pio --version` |
 | GitHub CLI | 2.x（任意、PR 操作用） | `gh --version` |
+| C++ コンパイラ | native 単体テスト用。Windows は `scoop install gcc`（確認済: MinGW GCC 15.2） | `g++ --version` |
+| `python-can` | PCAN からの CAN 送出（`DOC-30 §3`） | `python -c "import can"` |
+| Pillow | ロゴ変換 `tools/make_logo.py` | `python -c "import PIL"` |
+| clang-format | CI の lint ゲートをローカルで再現する | `python -m pip install --user clang-format` |
+| PEAK PCAN ドライバ | PCAN-USB を使う結合テスト | PCAN-View が起動すること |
 | エディタ | VS Code + PlatformIO IDE 拡張（任意） | — |
 
 ### 2.2 初回セットアップ
 
 ```bash
-python -m pip install --user --upgrade platformio
+python -m pip install --user --upgrade platformio python-can pillow clang-format
 ```
 
 インストール後、`pio` が PATH に無い場合は `python -m platformio` で代用できる。
@@ -101,7 +106,7 @@ pio run -e m5dial -t upload
 |---|---|---|
 | **native 単体テスト** | デコード・鮮度管理・単位換算のロジック検証 | `pio test -e native` |
 | **CAN シミュレータ（内蔵）** | 実機で UI の見た目と FPS を確認 | `pio run -e m5dial_sim -t upload`（λ・EGT をスイープ） |
-| **CAN フレーム再生** | ベンチで実バスを模擬（`QT-*`） | 別の CAN 機器（USB-CAN アダプタ等）から `tools/replay/*.csv` を送出 |
+| **PCAN からの送出** | ベンチで実バスを模擬（`IT-*` / `QT-*`） | `python tools/pcan_send.py --mode sweep`（要 PEAK ドライバ + `python-can`）。詳細は `DOC-30 §3` |
 
 `tools/replay/` の CSV 形式:
 

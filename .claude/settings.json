@@ -25,7 +25,11 @@
       "Bash(clang-format:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(python tools/pcan_send.py:*)",
+      "Bash(python tools/make_logo.py:*)",
+      "Bash(tools/can_send.ps1:*)",
+      "PowerShell(./tools/can_send.ps1:*)"
     ],
     "deny": []
   }

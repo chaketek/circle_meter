@@ -47,14 +47,51 @@
 
 ## 3. 結合テスト (`IT-*`) — 実機 + ベンチ
 
-実行には M5Dial 実機、CAN Unit、CAN フレーム送出装置（別の ESP32 + CAN Unit、または USB-CAN アダプタ）が必要。
+実行には M5Dial 実機、CAN Unit、CAN フレーム送出装置が必要。
+**本プロジェクトでは PEAK の PCAN インタフェースを使用する。**
+
+### 3.1 ベンチ構成
+
+```
+  PC ──USB── PCAN-USB ──CAN_H/CAN_L── M5Stack CAN Unit ──Grove── M5Dial
+  │                                                                │
+  └── tools/pcan_send.py（送信）                    └── USB ── PC（シリアルログ）
+```
+
+| 項目 | 設定 |
+|---|---|
+| ビットレート | 500 kbps |
+| ベース ID | `0x200`（既定） |
+| 送信周期 | 50 ms（20 Hz）。`--period-ms` で変更可 |
+| 終端抵抗 | **ベンチでは 2 ノードのみ**。CAN Unit 側 120 Ω を有効にし、PCAN 側にも 120 Ω を追加して合計 60 Ω にする。車両へ接続する際は CAN Unit 側を外すこと（`RSK-02` / `IT-10`） |
+
+> **注意**: 本機は Listen Only モードのため **ACK を返さない**（`SYS-07`）。
+> バス上に本機以外の ACK を返すノードが無いと、PCAN 側の送信が ACK エラーで
+> 再送を繰り返す。PCAN-View 等で送信エラーが出ても本機の受信自体は成立するが、
+> 送信側のエラーカウンタは増える。これは仕様どおりの挙動である。
+
+### 3.2 送信ツールの使い方
+
+| コマンド | 対応テスト |
+|---|---|
+| `python tools/pcan_send.py --mode idle` | `IT-01` 基本受信 |
+| `python tools/pcan_send.py --mode sweep` | `QT-02` / `QT-03` 全ゾーンの色確認 |
+| `python tools/pcan_send.py --mode dropout` | `IT-02` 途絶検出（5 秒送信 / 5 秒停止） |
+| `python tools/pcan_send.py --mode burst` | `IT-03` 200 Hz での取りこぼし |
+| `python tools/pcan_send.py --mode invalid` | `UT-09` の実機確認（λ=0 / EGT=0 / DLC 不足） |
+| `python tools/pcan_send.py --mode egt-danger` | `QT-05` 危険警告 |
+| `python tools/pcan_send.py --listen 10` | **`IT-04`** 本機が 1 フレームも送信しないこと |
+
+PowerShell からは `tools/can_send.ps1` が同じ機能を提供する。
+
+### 3.3 テストケース
 
 | ID | テスト内容 | 手順の要点 | 合格基準 | 検証する要求 |
 |---|---|---|---|---|
-| `IT-01` | CAN 受信の成立 | ベンチで 0x207 を 20 Hz 送出 | シリアルに λ 値が 20 Hz で出力される。TX/RX 入れ替え時はビルドフラグ変更のみで対応できる | `SWR-01`,`SWR-02`, `SYS-01` |
-| `IT-02` | 途絶検出 | 送出を停止し 3 秒待つ | 500 ms でグレー化、2000 ms で `--` + `NO SIGNAL`。**古い値が残らない** | `SYS-40`,`SYS-41`, `RSK-01` |
-| `IT-03` | 高負荷時の取りこぼし | 全 12 フレームを 5 ms 周期（200 Hz）で送出しつつ UI を操作 | `queueOverflow == 0`、`rxDropped == 0` | `SYS-06`, `SWR-03`,`SWR-26` |
-| `IT-04` | **送信しないこと** | バスアナライザで本機接続前後のトラフィックを比較。本機の電源だけを入れる | **本機由来のフレームが 1 件も観測されない**。ACK ビットも送出しない（Listen Only） | `SYS-07`, `RSK-06` |
+| `IT-01` | CAN 受信の成立 | `pcan_send.py --mode idle` | シリアルに λ 値が 20 Hz で出力される。TX/RX 入れ替え時はビルドフラグ変更のみで対応できる | `SWR-01`,`SWR-02`, `SYS-01` |
+| `IT-02` | 途絶検出 | `pcan_send.py --mode dropout` | 500 ms でグレー化、2000 ms で `--` + `NO SIGNAL`。**古い値が残らない** | `SYS-40`,`SYS-41`, `RSK-01` |
+| `IT-03` | 高負荷時の取りこぼし | `pcan_send.py --mode burst` を流しつつ UI を操作 | `queueOverflow == 0`、`rxDropped == 0` | `SYS-06`, `SWR-03`,`SWR-26` |
+| `IT-04` | **送信しないこと** | 本機の電源だけを入れ、`pcan_send.py --listen 30` でバスを観測する | **本機由来のフレームが 1 件も観測されない**。ACK ビットも送出しない（Listen Only） | `SYS-07`, `RSK-06` |
 | `IT-05` | 設定の永続化 | 表示単位・輝度・閾値・ページを変更 → 電源断 → 再投入 | 全て復元される。NVS 消去後は既定値で正常起動する | `SYS-20`,`SYS-35`, `SWR-80`-`SWR-82` |
 | `IT-06` | 入力操作 | エンコーダを素早く 10 ディテント回す。短押し・長押し | ページが 10 送られる（取りこぼしなし）。短押しで AFR/λ 切替、長押しで設定メニュー | `SYS-30`-`SYS-32`, `SWR-62`-`SWR-64` |
 | `IT-07` | バスオフ復旧 | CAN_H と CAN_L を短絡 → 3 秒後に解除 | `CAN ERROR` 表示 → 解除後 3 秒以内に通常表示へ復帰。`recoveryCount` が増える | `SYS-43`, `SWR-90` |
