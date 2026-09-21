@@ -109,6 +109,58 @@ PowerShell からは `tools/` のスクリプトが使えます。
 > Listen Only 構成では、バス上が ECU と本機の 2 ノードだけのとき ECU が再送を
 > 繰り返してバスオフに陥ります。フレームの送出は一切行いません。
 
+## ベンチで動作を確認する
+
+PCAN-USB から rusEFI のフレームを模擬送出し、M5Dial の表示を確認できます。
+実車がなくても表示の妥当性を判断できるので、UI を触ったら毎回これを回してください。
+
+### Claude Code から
+
+```
+/bench-check
+```
+
+「ベンチで流して」「実走模擬を走らせて」「目視チェックしたい」などでも起動します。
+前提の確認から実行・採点・目視チェックリストの提示までを一通り行います。
+定義は [.claude/skills/bench-check/SKILL.md](.claude/skills/bench-check/SKILL.md)。
+
+### コマンドで直接
+
+```bash
+python tools/bench_check.py
+```
+
+PowerShell なら `./tools/bench_check.ps1`。
+
+| やりたいこと | コマンド |
+|---|---|
+| 実走模擬を目視確認（既定・45 秒） | `python tools/bench_check.py` |
+| 最新をビルド・書き込んでから | `python tools/bench_check.py --flash` |
+| 短く済ませる | `python tools/bench_check.py --seconds 20` |
+| 青ゾーン（過濃域）も見る | `python tools/bench_check.py --mode sweep` |
+| EGT 警告の確認 (`QT-05`) | `python tools/bench_check.py --mode egt-danger --seconds 40` |
+| 途絶検出 (`IT-02`) | `python tools/bench_check.py --mode dropout --seconds 25` |
+| 高負荷 (`IT-03`) | `python tools/bench_check.py --mode burst --seconds 20` |
+| **送信しないこと** (`IT-04`) | `python tools/bench_check.py --listen --seconds 30` |
+
+受信レート・信号喪失の誤検出・キュー溢れ・TWAI エラー・鮮度・描画レートを自動判定し、
+合格なら終了コード 0 を返します。あわせて画面の目視チェックリストを表示します。
+
+**実走模擬パターン**（20 秒周期）はアイドル → 1-2-3 速で 60 km/h まで加速 → 定常走行 →
+減速（燃料カット）→ アイドル を繰り返します。踏み始めのリーンスパイク、全開時のリッチ、
+燃料カット時の張り付き、復帰時のリッチまで再現しており、λ は 0.836 – 1.361 を通ります。
+詳細は [DOC-30 §3.4](docs/30_test_strategy.md)。
+
+> 送信側の λ には一次遅れ（τ = 300 ms）を掛けています。実際のワイドバンドセンサにも
+> 応答遅れがあり、階段状の λ がバスに出ることはないためです。
+
+### 前提
+
+- PCAN-USB を PC に接続し、CAN_H / CAN_L / GND を CAN Unit へ配線
+- M5Dial に **実 CAN 版**（`m5dial`）のファームウェアが入っていること
+  （`m5dial_sim` は CAN を一切読みません）
+- ベンチは 2 ノードのみなので、終端は CAN Unit 側 120 Ω + PCAN 側 120 Ω（合計 60 Ω）
+
 ## ECU 側の前提設定
 
 TunerStudio で以下を確認してください（[DOC-13 §5](docs/13_ICD_rusefi_can.md)）。

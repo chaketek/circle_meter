@@ -90,6 +90,17 @@
 
 PowerShell からは `tools/can_send.ps1` が同じ機能を提供する。
 
+**`tools/bench_check.py` は送信と採点をまとめたオーケストレータ**である。
+毎回同じ手順で実行し、受信レート・信号喪失の誤検出・キュー溢れ・TWAI エラー・鮮度・
+描画レートを自動判定したうえで、画面の目視チェックリストを表示する（終了コード 0 = 全合格）。
+Claude Code からは Skill `bench-check` で起動できる。
+
+```bash
+python tools/bench_check.py --seconds 45
+python tools/bench_check.py --mode dropout --seconds 25
+python tools/bench_check.py --listen --seconds 30
+```
+
 ### 3.4 実走模擬パターン (`--mode drive`)
 
 単純な λ スイープでは、実際の運転で現れる**過渡挙動**（加速初期のリーンスパイク、
