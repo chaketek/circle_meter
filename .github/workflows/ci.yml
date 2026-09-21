@@ -42,10 +42,10 @@ jobs:
             exit 1
           fi
 
-      - name: S3 Listen Only 以外のモード指定が無いこと (RSK-06)
+      - name: S3 自己テストモード(NO_ACK)が指定されていないこと (RSK-10)
         run: |
-          if grep -rnE 'TWAI_MODE_(NORMAL|NO_ACK)' src lib; then
-            echo "::error::TWAI は TWAI_MODE_LISTEN_ONLY でのみ初期化してください (DEC-04)"
+          if grep -rnE 'TWAI_MODE_NO_ACK' src lib; then
+            echo "::error::TWAI_MODE_NO_ACK は ACK を返さず RSK-10 を再発させます (DEC-04)"
             exit 1
           fi
 

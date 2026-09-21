@@ -179,7 +179,7 @@ flowchart LR
 | ジョブ | 実行環境 | 内容 | 失敗時 |
 |---|---|---|---|
 | `lint` | ubuntu-latest | `clang-format --dry-run -Werror` | マージ不可 |
-| `guard` | ubuntu-latest | `twai_transmit` / `twai_start`(送信モード) の混入検査（`RSK-06`） | マージ不可 |
+| `guard` | ubuntu-latest | `twai_transmit` の混入検査（`RSK-06`）、`TWAI_MODE_NO_ACK` の検査（`RSK-10`）、ドメイン層の HW 依存検査（`DEC-06`） | マージ不可 |
 | `test` | ubuntu-latest | `pio test -e native` | マージ不可 |
 | `build` | ubuntu-latest | `pio run -e m5dial -e m5dial_sim` + Flash/RAM 使用量をジョブサマリに出力 | マージ不可 |
 | `release` | ubuntu-latest | タグ push 時のみ。`firmware.bin` `firmware.elf` を Release に添付 | — |
