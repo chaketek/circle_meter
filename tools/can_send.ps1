@@ -1,5 +1,6 @@
 # DOC-30 §3: PCAN から rusEFI verbose broadcast を模擬送出する（結合テスト IT-*）
-#   .\tools\can_send.ps1                      sweep（λ を往復させる）
+#   .\tools\can_send.ps1                      drive（実走模擬。20 秒周期で繰り返す）
+#   .\tools\can_send.ps1 -Mode sweep          λ を単純に往復させる
 #   .\tools\can_send.ps1 -Mode idle
 #   .\tools\can_send.ps1 -Mode dropout        IT-02 途絶検出
 #   .\tools\can_send.ps1 -Mode burst          IT-03 取りこぼし
@@ -7,8 +8,8 @@
 #   .\tools\can_send.ps1 -Mode egt-danger     QT-05 危険警告
 #   .\tools\can_send.ps1 -Listen 10           IT-04 本機が送信しないことの確認
 param(
-    [ValidateSet('idle','sweep','egt-danger','dropout','burst','invalid','replay')]
-    [string]$Mode = 'sweep',
+    [ValidateSet('drive','idle','sweep','egt-danger','dropout','burst','invalid','replay')]
+    [string]$Mode = 'drive',
     [string]$Channel = 'PCAN_USBBUS1',
     [int]$Bitrate = 500000,
     [string]$Base = '0x200',

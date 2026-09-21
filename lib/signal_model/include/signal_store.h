@@ -35,8 +35,7 @@ public:
         const SignalValue& v = m_s[idx(id)];
         if (!v.everReceived)
             return Freshness::Lost;
-        // 32bit ラップアラウンド対応: 符号なし減算で差分を取る（UT-14）
-        const uint32_t age = takenAtMs - v.lastUpdateMs;
+        const uint32_t age = ageMs(id);
         if (age < kStaleAfterMs)
             return Freshness::Fresh;
         if (age < kLostAfterMs)
@@ -50,6 +49,26 @@ public:
             return false;
         out = m_s[idx(id)].value;
         return true;
+    }
+
+    /// 最終更新からの経過時間。値そのものは返さないので RSK-01 の契約に抵触しない。
+    /// 診断・不具合解析用（SWR-92）。未受信の場合は 0xFFFFFFFF を返す。
+    ///
+    /// 【実機で踏んだ不具合】
+    /// 更新時刻が読み出し時刻より「未来」になることがある。UI タスクは loop() の先頭で
+    /// millis() を取り、描画に十数ミリ秒かけてからスナップショットを取るため、
+    /// その間に CAN タスク（別コア）がより新しい時刻で更新するからである。
+    /// 単純な符号なし減算ではこれがアンダーフローして巨大な値になり、
+    /// 「2000 ms 以上更新なし」と誤判定されて、受信中なのに NO SIGNAL が出る。
+    /// 差分を符号付きで見て、負（= 未来の更新）は 0 とみなす。
+    /// 32bit のラップアラウンド（約 49.7 日）もこの方法で正しく扱える（UT-14）。
+    uint32_t ageMs(SignalId id) const {
+        const SignalValue& v = m_s[idx(id)];
+        if (!v.everReceived) {
+            return 0xFFFFFFFFu;
+        }
+        const int32_t diff = static_cast<int32_t>(takenAtMs - v.lastUpdateMs);
+        return (diff < 0) ? 0u : static_cast<uint32_t>(diff);
     }
 
     /// 状態フラグ（DOC-13 §3.6）。Lost のときは false。

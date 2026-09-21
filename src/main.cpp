@@ -463,12 +463,13 @@ void loop() {
         const uint32_t frameUs = g_frameCount ? g_frameUsTotal / g_frameCount : 0;
         Serial.printf(
             "rx=%lu f/s=%lu unk=%lu dlc=%lu ovf=%lu tec=%lu rec=%lu | lam=%s%.3f egt=%s%.0f | "
-            "draw=%luus (max %lu fps) heap=%u\n",
+            "ageL=%lu ageE=%lu snapFail=%lu | draw=%luus (max %lu fps) heap=%u\n",
             (unsigned long)s.rxFrames, (unsigned long)s.framesPerSec, (unsigned long)s.unknownId,
             (unsigned long)s.badDlc, (unsigned long)s.queueOverflow, (unsigned long)s.tec,
             (unsigned long)s.rec, hasLam ? "" : "(none)", lam, hasEgt ? "" : "(none)", egt,
-            (unsigned long)frameUs, (unsigned long)(frameUs ? 1000000UL / frameUs : 0),
-            (unsigned)ESP.getFreeHeap());
+            (unsigned long)snap.ageMs(SignalId::Lambda1), (unsigned long)snap.ageMs(SignalId::Egt1),
+            (unsigned long)g_store.snapshotFailures(), (unsigned long)frameUs,
+            (unsigned long)(frameUs ? 1000000UL / frameUs : 0), (unsigned)ESP.getFreeHeap());
     }
 
     delay(2);

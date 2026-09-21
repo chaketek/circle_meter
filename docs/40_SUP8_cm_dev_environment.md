@@ -194,6 +194,8 @@ GitHub Actions のランナーは M5Dial に物理接続できない。
 | `tools/build.ps1` | `pio run -e m5dial` |
 | `tools/test.ps1` | `pio test -e native` |
 | `bash tools/guard.sh` | CI の `guard` ジョブと同じ静的チェックをローカルで実行 |
+| `tools/bench_check.ps1` | PCAN ベンチで CAN パターンを流し、表示を目視確認する（`DOC-30 §3`）。Claude Code からは Skill `bench-check` |
+| `tools/can_send.ps1` | PCAN からの送出のみ（採点なし） |
 | `tools/flash.ps1 [-Port COM5] [-Sim]` | ビルド + 書き込み。`-Sim` で CAN シミュレータ版 |
 | `tools/monitor.ps1 [-Port COM5]` | シリアルモニタ（115200 bps） |
 | `tools/flash_and_monitor.ps1` | 書き込み後そのままモニタ |

@@ -30,7 +30,10 @@
       "Bash(python tools/make_logo.py:*)",
       "Bash(tools/can_send.ps1:*)",
       "PowerShell(./tools/can_send.ps1:*)",
-      "Bash(bash tools/guard.sh:*)"
+      "Bash(bash tools/guard.sh:*)",
+      "Bash(python tools/bench_check.py:*)",
+      "Bash(tools/bench_check.ps1:*)",
+      "PowerShell(./tools/bench_check.ps1:*)"
     ],
     "deny": []
   }
