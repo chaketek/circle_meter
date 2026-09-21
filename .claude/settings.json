@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "permissions": {
+    "allow": [
+      "Bash(python -m platformio run:*)",
+      "Bash(python -m platformio test:*)",
+      "Bash(python -m platformio check:*)",
+      "Bash(python -m platformio device list:*)",
+      "Bash(python -m platformio pkg:*)",
+      "Bash(pio run:*)",
+      "Bash(pio test:*)",
+      "Bash(pio check:*)",
+      "Bash(pio device list:*)",
+      "Bash(pio pkg:*)",
+      "Bash(tools/build.ps1:*)",
+      "Bash(tools/test.ps1:*)",
+      "Bash(tools/flash.ps1:*)",
+      "Bash(tools/monitor.ps1:*)",
+      "Bash(tools/flash_and_monitor.ps1:*)",
+      "PowerShell(./tools/build.ps1:*)",
+      "PowerShell(./tools/test.ps1:*)",
+      "PowerShell(./tools/flash.ps1:*)",
+      "PowerShell(./tools/monitor.ps1:*)",
+      "PowerShell(./tools/flash_and_monitor.ps1:*)",
+      "Bash(clang-format:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "deny": []
+  }
+}

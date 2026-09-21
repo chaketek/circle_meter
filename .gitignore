@@ -1,0 +1,8 @@
+.pio/
+.vscode/
+!.vscode/extensions.json
+*.pyc
+__pycache__/
+include/version.h
+.DS_Store
+Thumbs.db

@@ -1,0 +1,144 @@
+# DOC-40 §4 / DOC-41 §2: 品質ゲート
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ---------------------------------------------------------------- S1
+  lint:
+    name: lint (clang-format)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: clang-format
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y clang-format
+          files=$(find src lib test -type f \( -name '*.cpp' -o -name '*.h' \))
+          echo "$files"
+          clang-format --dry-run -Werror $files
+
+  # ---------------------------------------------------------------- S2/S3/S4/S5
+  # RSK-06 / DEC-06 を CI で物理的に守る（DOC-41 §3.1）
+  guard:
+    name: guard (安全・依存分離の静的チェック)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: S2 CAN 送信 API が混入していないこと (RSK-06 / SYS-07)
+        run: |
+          if grep -rnE 'twai_transmit' src lib; then
+            echo "::error::CAN 送信 API が含まれています。本機は受信専用です (SYS-07 / RSK-06)"
+            exit 1
+          fi
+
+      - name: S3 Listen Only 以外のモード指定が無いこと (RSK-06)
+        run: |
+          if grep -rnE 'TWAI_MODE_(NORMAL|NO_ACK)' src lib; then
+            echo "::error::TWAI は TWAI_MODE_LISTEN_ONLY でのみ初期化してください (DEC-04)"
+            exit 1
+          fi
+
+      - name: S4 ドメイン層が HW に依存していないこと (DEC-06 / SWR-10)
+        run: |
+          if grep -rnE '#include[[:space:]]*[<"](Arduino\.h|lvgl\.h|driver/|esp_|freertos/)' \
+               lib/rusefi_can lib/signal_model; then
+            echo "::error::ドメイン層 (rusefi_can / signal_model) は HW 非依存でなければなりません"
+            exit 1
+          fi
+
+      - name: S5 CAN スケーリング定数の直書きが無いこと (SWD-01)
+        run: |
+          if grep -rnE '0\.0001f|0\.0333|1275\.0f|\* 5\.0f' lib/rusefi_can/src; then
+            echo "::error::スケーリング値は rusefi_can_spec.h の定数を使ってください"
+            exit 1
+          fi
+
+  # ---------------------------------------------------------------- SWE.4
+  test:
+    name: test (native unit tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.cache/pip
+          key: pio-native-${{ hashFiles('platformio.ini') }}
+      - run: pip install --upgrade platformio
+      - name: pio test -e native
+        run: pio test -e native -v
+
+  # ---------------------------------------------------------------- ビルド
+  build:
+    name: build (ESP32-S3)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # SWR-102: git describe のためタグを取得する
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+            ~/.cache/pip
+          key: pio-esp32-${{ hashFiles('platformio.ini') }}
+      - run: pip install --upgrade platformio
+
+      - name: Build
+        run: pio run -e m5dial -e m5dial_sim
+
+      - name: サイズレポート
+        run: |
+          {
+            echo '## Firmware size'
+            echo '```'
+            pio run -e m5dial -t size 2>&1 | grep -E 'RAM:|Flash:' || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: |
+            .pio/build/m5dial/firmware.bin
+            .pio/build/m5dial/firmware.elf
+            .pio/build/m5dial_sim/firmware.bin
+          if-no-files-found: error
+
+  # ---------------------------------------------------------------- SPL.2
+  release:
+    name: release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [lint, guard, test, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: firmware-${{ github.sha }}
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/**/*
+          generate_release_notes: true
