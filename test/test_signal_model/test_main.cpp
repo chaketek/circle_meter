@@ -1,9 +1,11 @@
 // SWE.4 ユニット検証: 信号モデル（鮮度・単位換算・設定）
-// UT-05 〜 UT-09, UT-11 〜 UT-14  (docs/30_test_strategy.md §2)
+// UT-05 〜 UT-09, UT-11 〜 UT-15  (docs/30_test_strategy.md §2)
 #include <unity.h>
 
+#include <atomic>
 #include <cstring>
 #include <new>
+#include <thread>
 
 #include "button_fsm.h"
 #include "config.h"
@@ -423,6 +425,86 @@ void test_UT14_millis_wraparound() {
                       static_cast<int>(st.snapshot(0x00000900u).freshnessOf(SignalId::Lambda1)));
 }
 
+// ---------------------------------------------------------------- UT-15
+// SWD-02: seqlock の再試行が書き込み側と競合しても、受信中の信号を Lost と
+// 報告してはならない。実機で「受信は 120 f/s で継続しているのに一瞬だけ
+// NO SIGNAL が出る」という形で踏んだ不具合の回帰テスト。
+//
+// 論理時刻を固定して呼ぶため、鮮度は常に Fresh のはず。
+// ここで Lost が観測されたら、それはスナップショットが一度も埋められずに
+// 返ったことを意味する。
+void test_UT15_snapshot_never_reports_lost_while_writer_is_busy() {
+    SignalStore st;
+    constexpr uint32_t kT = 1000;
+
+    st.update(SignalId::Lambda1, 0.95f, kT);
+    st.update(SignalId::Egt1, 500.0f, kT);
+
+    std::atomic<bool> stop{false};
+    std::thread writer([&] {
+        while (!stop.load(std::memory_order_relaxed)) {
+            st.update(SignalId::Lambda1, 0.95f, kT);
+            st.update(SignalId::Egt1, 500.0f, kT);
+            st.update(SignalId::Rpm, 3000.0f, kT);
+        }
+    });
+
+    int lostSeen = 0;
+    for (int i = 0; i < 100000; ++i) {
+        const Snapshot s = st.snapshot(kT);
+        float v          = 0.0f;
+        if (!s.get(SignalId::Lambda1, v)) {
+            ++lostSeen;
+        }
+        if (!s.get(SignalId::Egt1, v)) {
+            ++lostSeen;
+        }
+    }
+
+    stop.store(true, std::memory_order_relaxed);
+    writer.join();
+
+    TEST_ASSERT_EQUAL_INT(0, lostSeen);
+}
+
+// 書き込み中でも値が混ざらない（ティアリングしない）こと
+void test_UT15_snapshot_is_not_torn() {
+    SignalStore st;
+    constexpr uint32_t kT = 1000;
+    st.update(SignalId::Lambda1, 1.0f, kT);
+    st.update(SignalId::Lambda2, 1.0f, kT);
+
+    std::atomic<bool> stop{false};
+    std::thread writer([&] {
+        float v = 0.70f;
+        while (!stop.load(std::memory_order_relaxed)) {
+            v = (v > 1.29f) ? 0.70f : v + 0.01f;
+            // 2 つの信号は常に同じ値に保たれる。読み側で食い違ったら世代が混ざっている。
+            st.update(SignalId::Lambda1, v, kT);
+            st.update(SignalId::Lambda2, v, kT);
+        }
+    });
+
+    int mismatched = 0;
+    for (int i = 0; i < 50000; ++i) {
+        const Snapshot s = st.snapshot(kT);
+        float a = 0.0f, b = 0.0f;
+        if (s.get(SignalId::Lambda1, a) && s.get(SignalId::Lambda2, b)) {
+            // Lambda1 を書いた直後・Lambda2 を書く前の世代を読むのは正当なので、
+            // 差は 1 ステップ (0.01) 以内に収まるはず。それ以上は破損を意味する。
+            const float diff = (a > b) ? (a - b) : (b - a);
+            if (diff > 0.011f && diff < 0.58f) {
+                ++mismatched;
+            }
+        }
+    }
+
+    stop.store(true, std::memory_order_relaxed);
+    writer.join();
+
+    TEST_ASSERT_EQUAL_INT(0, mismatched);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_UT05_zone_boundaries_exact);
@@ -456,5 +538,7 @@ int main(int, char**) {
     RUN_TEST(test_UT13_monotonic_violation_rejected);
     RUN_TEST(test_UT13_range_violations_rejected);
     RUN_TEST(test_UT14_millis_wraparound);
+    RUN_TEST(test_UT15_snapshot_never_reports_lost_while_writer_is_busy);
+    RUN_TEST(test_UT15_snapshot_is_not_torn);
     return UNITY_END();
 }

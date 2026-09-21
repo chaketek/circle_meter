@@ -36,6 +36,27 @@ bool g_canvasReady = false;
 
 constexpr uint32_t kUiPeriodMs = 33;  // 約 30fps（SYS-12）
 
+// オープニング画面の時間（DOC-23 §7）。合計 3.0 s
+constexpr uint32_t kSplashFadeInMs    = 800;
+constexpr uint32_t kSplashHoldMs      = 1600;
+constexpr uint32_t kSplashHoldShortMs = 400;  // CAN を受信済みのとき
+constexpr uint32_t kSplashFadeOutMs   = 600;
+
+// 円形画面のレイアウト（DOC-23 §2）
+constexpr int kCx         = 120;
+constexpr int kCy         = 120;
+constexpr int kRingOuter  = 118;
+constexpr int kRingInner  = 96;  // この内側が数値の描画領域
+constexpr int kTextMargin = 2;   // リングに触れないための余白
+
+// 縦方向のバンド割り。各要素が重ならないよう高さ上限を決めておく。
+constexpr int kLabelY   = 52;   // 単位ラベル（その 18px 上に鮮度）
+constexpr int kMainY    = 104;  // 主数値の垂直中心
+constexpr int kMainMaxH = 80;   // 主数値の高さ上限
+constexpr int kEgtY     = 168;  // 排気温度の垂直中心
+constexpr int kEgtMaxH  = 44;   // 排気温度の高さ上限
+constexpr int kStatusY  = 202;  // ブリングアップ用ステータス
+
 // 実フレームレートの計測（SYS-12 の早期データ点。正式には QT-03 で測る）
 uint32_t g_frameCount   = 0;
 uint32_t g_frameUsTotal = 0;
@@ -137,9 +158,9 @@ void fadeBacklight(int from, int to, uint32_t durationMs) {
 
 // ---------------------------------------------------------------- オープニング画面
 // SYS-18 / SYS-19 / SWR-48 / DOC-23 §7
-//   0.0 - 0.4 s  フェードイン
-//   0.4 - 1.2 s  保持（CAN を受信済みなら 0.2 s に短縮する）
-//   1.2 - 1.5 s  フェードアウト
+//   0.0 - 0.8 s  フェードイン
+//   0.8 - 2.4 s  保持（CAN を受信済みなら 0.4 s に短縮する）
+//   2.4 - 3.0 s  フェードアウト
 // この間も CAN 受信タスクは Core 0 で動いている（SWD-09 の起動順序）。
 void showSplash(uint8_t targetLevel) {
     auto& d = M5Dial.Display;
@@ -159,14 +180,88 @@ void showSplash(uint8_t targetLevel) {
     d.drawString(CM_FW_VERSION, 120, 200);
 
     const int target = brightnessPwm(targetLevel);
-    fadeBacklight(0, target, 400);
+    fadeBacklight(0, target, kSplashFadeInMs);
 
     // SYS-18: ECU からの受信が既に始まっていれば長く見せる必要はない
-    const uint32_t holdMs = (g_can.stats().rxFrames > 0) ? 200 : 800;
-    delay(holdMs);
+    delay((g_can.stats().rxFrames > 0) ? kSplashHoldShortMs : kSplashHoldMs);
 
-    fadeBacklight(target, 0, 300);
+    fadeBacklight(target, 0, kSplashFadeOutMs);
     d.fillScreen(TFT_BLACK);
+}
+
+// ---------------------------------------------------------------- 文字サイズの自動決定
+// 丸型画面では「画面に入る」ではなく「円に入る」かどうかで最大サイズが決まる。
+// 文字列の外接矩形の四隅のうち中心から最も遠い点で判定する。
+// これにより λ (1.000 = 5 文字) と AFR (14.7 = 4 文字) で自動的に適切な大きさになる。
+struct TextFit {
+    const lgfx::IFont* font;
+    float size;  // LovyanGFX の setTextSize は小数倍を受け付ける
+};
+
+/// 文字列を半径 r の円に収めたときの最大の書体を返す。
+///
+/// @param yc         文字列の垂直中心
+/// @param r          収めたい円の半径（リング内径より内側にする）
+/// @param numericOnly 収録文字が数字と '.' だけの大きい書体を使ってよいか
+/// @param maxHeight  他の要素とぶつからないための高さ上限
+///
+/// 候補は大きい順。整数倍だけだと AFR で 1.5 倍程度しか取れないため、
+/// Font6 を小数倍でスケールする段を挟んで細かく詰める。
+TextFit fitText(LovyanGFX& d, const char* str, int yc, int r, bool numericOnly, int maxHeight) {
+    // Font8 / Font6 は数字・記号のみ収録。英字を含む文字列には使えない。
+    static const TextFit kNumeric[] = {
+        {&fonts::Font8, 1.0f}, {&fonts::Font6, 1.8f}, {&fonts::Font6, 1.7f}, {&fonts::Font6, 1.6f},
+        {&fonts::Font6, 1.5f}, {&fonts::Font6, 1.4f}, {&fonts::Font6, 1.3f}, {&fonts::Font6, 1.2f},
+        {&fonts::Font6, 1.1f}, {&fonts::Font6, 1.0f}, {&fonts::Font4, 1.5f}, {&fonts::Font4, 1.0f},
+        {&fonts::Font0, 2.0f},
+    };
+    static const TextFit kAscii[] = {
+        {&fonts::Font4, 2.4f}, {&fonts::Font4, 2.2f}, {&fonts::Font4, 2.0f}, {&fonts::Font4, 1.8f},
+        {&fonts::Font4, 1.6f}, {&fonts::Font4, 1.4f}, {&fonts::Font4, 1.2f}, {&fonts::Font4, 1.0f},
+        {&fonts::Font2, 1.5f}, {&fonts::Font2, 1.0f}, {&fonts::Font0, 2.0f}, {&fonts::Font0, 1.0f},
+    };
+
+    const TextFit* head = numericOnly ? kNumeric : kAscii;
+    const size_t count =
+        numericOnly ? (sizeof(kNumeric) / sizeof(kNumeric[0])) : (sizeof(kAscii) / sizeof(kAscii[0]));
+
+    TextFit fallback{&fonts::Font0, 1.0f};
+
+    for (size_t i = 0; i < count; ++i) {
+        d.setFont(head[i].font);
+        d.setTextSize(head[i].size);
+        const int w = d.textWidth(str);
+        const int h = d.fontHeight();
+
+        fallback = head[i];  // 全部外れたら最後（=最小）の候補を使う
+        if (h > maxHeight) {
+            continue;
+        }
+
+        // 外接矩形の上辺・下辺のうち、画面中心から遠いほうで判定する
+        const int dyTop    = abs(yc - h / 2 - kCy);
+        const int dyBottom = abs(yc + h / 2 - kCy);
+        const int dy       = (dyTop > dyBottom) ? dyTop : dyBottom;
+        if (dy >= r) {
+            continue;
+        }
+        const int avail = 2 * static_cast<int>(sqrtf(static_cast<float>(r * r - dy * dy)));
+        if (w <= avail) {
+            return head[i];
+        }
+    }
+    return fallback;
+}
+
+/// fitText で選んだ書体で描く。
+void drawFitted(LovyanGFX& d, const char* str, int yc, int r, bool numericOnly, int maxHeight,
+                uint16_t color) {
+    const TextFit f = fitText(d, str, yc, r, numericOnly, maxHeight);
+    d.setFont(f.font);
+    d.setTextSize(f.size);
+    d.setTextColor(color, TFT_BLACK);
+    d.setTextDatum(middle_center);
+    d.drawString(str, kCx, yc);
 }
 
 // ---------------------------------------------------------------- 暫定 UI
@@ -207,58 +302,63 @@ void drawBringupScreen(const Snapshot& snap) {
     const bool hasLambda = snap.get(SignalId::Lambda1, lambda);
     const auto zone      = zoneOf(lambda, g_cfg.zones);
 
+    // 外周バーの簡易版（P4 で LambdaRing に置き換える / SWD-08）
+    // 数値より先に描くことで、はみ出した数値が上書きされずバーの上に載る
+    d.fillArc(kCx, kCy, kRingInner, kRingOuter, 135, 135 + 270, d.color565(0x1A, 0x1A, 0x1A));
+    if (hasLambda) {
+        const float ratio = ringRatio(lambda, g_cfg.ringLo, g_cfg.ringHi);
+        const int sweep   = static_cast<int>(ratio * 270.0f);
+        if (sweep > 0) {
+            d.fillArc(kCx, kCy, kRingInner, kRingOuter, 135, 135 + sweep, zoneColor(zone));
+        }
+    }
+
+    const int rText = kRingInner - kTextMargin;
+    char buf[16];
+
+    // 鮮度（上端）
+    d.setFont(&fonts::Font0);
+    d.setTextSize(1);
     d.setTextDatum(middle_center);
     d.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    d.setTextSize(1);
-    d.drawString(g_cfg.showAfr ? "AFR" : "LAMBDA", 120, 62);
+    d.drawString(freshnessLabel(snap.freshnessOf(SignalId::Lambda1)), kCx, kLabelY - 18);
 
-    char buf[16];
+    // 単位ラベル
+    d.drawString(g_cfg.showAfr ? "AFR" : "LAMBDA", kCx, kLabelY);
+
+    // 主数値（λ / AFR）
     if (hasLambda) {
         if (g_cfg.showAfr) {
             snprintf(buf, sizeof(buf), "%.1f", lambdaToAfr(lambda, g_cfg.stoich));
         } else {
             snprintf(buf, sizeof(buf), "%.3f", lambda);
         }
-        d.setTextColor(zoneColor(zone), TFT_BLACK);
+        drawFitted(d, buf, kMainY, rText, true, kMainMaxH, zoneColor(zone));
     } else {
-        snprintf(buf, sizeof(buf), "--");
-        d.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    }
-    d.setTextSize(4);
-    d.drawString(buf, 120, 105);
-
-    // 外周バーの簡易版（P4 で LambdaRing に置き換える / SWD-08）
-    if (hasLambda) {
-        const float ratio = ringRatio(lambda, g_cfg.ringLo, g_cfg.ringHi);
-        const int sweep   = static_cast<int>(ratio * 270.0f);
-        d.fillArc(120, 120, 96, 118, 135, 135 + 270, d.color565(0x1A, 0x1A, 0x1A));
-        if (sweep > 0) {
-            d.fillArc(120, 120, 96, 118, 135, 135 + sweep, zoneColor(zone));
-        }
+        drawFitted(d, "--", kMainY, rText, true, kMainMaxH, TFT_DARKGREY);
     }
 
+    // 排気温度
     float egtC = 0.0f;
     if (snap.get(SignalId::Egt1, egtC)) {
-        const auto lv = levelOf(egtC, g_cfg.egt);
-        d.setTextColor(lv == EgtLevel::Danger ? d.color565(0xFF, 0x2D, 0x2D)
-                       : lv == EgtLevel::Warn ? d.color565(0xFF, 0xC4, 0x00)
-                                              : TFT_LIGHTGREY,
-                       TFT_BLACK);
+        const auto lv           = levelOf(egtC, g_cfg.egt);
+        const uint16_t egtColor = (lv == EgtLevel::Danger) ? d.color565(0xFF, 0x2D, 0x2D)
+                                  : (lv == EgtLevel::Warn) ? d.color565(0xFF, 0xC4, 0x00)
+                                                           : TFT_LIGHTGREY;
         snprintf(buf, sizeof(buf), "%dC", static_cast<int>(egtC + 0.5f));
+        drawFitted(d, buf, kEgtY, rText, false, kEgtMaxH, egtColor);
     } else {
-        d.setTextColor(TFT_DARKGREY, TFT_BLACK);
-        snprintf(buf, sizeof(buf), "--C");
+        drawFitted(d, "--C", kEgtY, rText, false, kEgtMaxH, TFT_DARKGREY);
     }
-    d.setTextSize(2);
-    d.drawString(buf, 120, 158);
 
-    // ブリングアップ用ステータス（P2 で OPN-02 を潰すための情報）
+    // ブリングアップ用ステータス（下端）
+    d.setFont(&fonts::Font0);
     d.setTextSize(1);
+    d.setTextDatum(middle_center);
     d.setTextColor(TFT_DARKGREY, TFT_BLACK);
     snprintf(buf, sizeof(buf), "%lu f/s  %lu fps", static_cast<unsigned long>(g_can.stats().framesPerSec),
              static_cast<unsigned long>(g_frameUsTotal ? 1000000UL * g_frameCount / g_frameUsTotal : 0));
-    d.drawString(buf, 120, 182);
-    d.drawString(freshnessLabel(snap.freshnessOf(SignalId::Lambda1)), 120, 196);
+    d.drawString(buf, kCx, kStatusY);
 
     if (g_canvasReady) {
         g_canvas.pushSprite(0, 0);
@@ -287,6 +387,29 @@ void setup() {
         Serial.println("CAN init FAILED");
     }
 #endif
+
+    // 選ばれた文字サイズをログに出す（レイアウト調整の確認用）
+    {
+        auto& dd    = M5Dial.Display;
+        const int r = kRingInner - kTextMargin;
+        struct {
+            const char* s;
+            int yc;
+            int maxH;
+            bool num;
+        } probes[] = {
+            {"14.7", kMainY, kMainMaxH, true},
+            {"1.000", kMainY, kMainMaxH, true},
+            {"845C", kEgtY, kEgtMaxH, false},
+        };
+        for (auto& pr : probes) {
+            const TextFit f = fitText(dd, pr.s, pr.yc, r, pr.num, pr.maxH);
+            dd.setFont(f.font);
+            dd.setTextSize(f.size);
+            Serial.printf("fit '%s': size=%.1f w=%d h=%d\n", pr.s, f.size, dd.textWidth(pr.s),
+                          dd.fontHeight());
+        }
+    }
 
     // 全画面スプライト 240x240x16bit = 112.5 KB。確保できなければ直接描画へフォールバックする。
     g_canvas.setColorDepth(16);
