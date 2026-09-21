@@ -181,16 +181,22 @@ struct CanStats {
 
 class CanDriver {
 public:
-    bool begin(const Config& cfg);           // Listen Only で初期化
+    bool begin(const Config& cfg);           // NORMAL モードで初期化（送信 API は持たない）
     bool receive(twai_message_t& out, uint32_t timeoutMs);
     void poll();                             // can_health タスクから 1 s 周期
     const CanStats& stats() const;
 };
 ```
 
-**契約**: `begin()` は `TWAI_MODE_LISTEN_ONLY` 以外のモードで初期化してはならない（`RSK-06`）。
-送信 API を公開しない。`twai_transmit()` の呼び出しは**コードベース全体で禁止**とし、
-CI の静的チェックで検出する（`DOC-41 §3`）。
+**契約**:
+- `begin()` は `TWAI_MODE_NORMAL` で初期化する。受信フレームに ACK を返すためである（`RSK-10`）。
+  `TWAI_MODE_NO_ACK`（自己テスト用）は使ってはならない。
+- **送信 API を公開しない。** `CanDriver` に送信メソッドを追加してはならない。
+- 送信キュー長を **0** で初期化する。万一 `twai_transmit()` が呼ばれてもキューイングできない。
+- `twai_transmit()` の呼び出しは**コードベース全体で禁止**とし、CI の静的チェックで検出する（`DOC-41 §3`）。
+
+この 3 層で `RSK-06`（誤送信）を担保する。Listen Only による「物理的な送信不能」は
+`RSK-10` のため採用できない（`DEC-04` を参照）。
 
 ### 5.1 バスオフ復旧の状態遷移（`SWR-90`）
 

@@ -51,12 +51,14 @@ void CanDriver::applyFilter(const Config& cfg, twai_filter_config_t& f) const {
 }
 
 bool CanDriver::begin(const Config& cfg) {
-    // RSK-06: Listen Only 以外のモードに変更してはならない。ACK も返さない。
-    twai_general_config_t g =
-        TWAI_GENERAL_CONFIG_DEFAULT(static_cast<gpio_num_t>(CM_TWAI_TX_GPIO),
-                                    static_cast<gpio_num_t>(CM_TWAI_RX_GPIO), TWAI_MODE_LISTEN_ONLY);
+    // DEC-04 / RSK-10: NORMAL で初期化し、受信フレームに ACK を返す。
+    // 自己テスト用の TWAI_MODE_NO_ACK に変更してはならない（ACK を返さなくなる）。
+    twai_general_config_t g = TWAI_GENERAL_CONFIG_DEFAULT(
+        static_cast<gpio_num_t>(CM_TWAI_TX_GPIO), static_cast<gpio_num_t>(CM_TWAI_RX_GPIO), TWAI_MODE_NORMAL);
     g.rx_queue_len = 64;  // SWR-03: 32 以上
-    g.tx_queue_len = 0;   // 送信しない
+    // SWR-1A / RSK-06 の第 2 層: 送信キューを持たない。
+    // 万一 TWAI の送信 API が呼ばれてもキューイングできない。ACK 生成はキューを使わない。
+    g.tx_queue_len = 0;
 
     twai_timing_config_t t = timingFor(cfg.canBitrateKbps);
     twai_filter_config_t f{};
@@ -75,7 +77,7 @@ bool CanDriver::begin(const Config& cfg) {
     }
 
     m_state = CanState::Running;
-    ESP_LOGI(kTag, "TWAI started: listen-only, %u kbps, base 0x%03X, tx=%d rx=%d", cfg.canBitrateKbps,
+    ESP_LOGI(kTag, "TWAI started: rx-only(ack), %u kbps, base 0x%03X, tx=%d rx=%d", cfg.canBitrateKbps,
              cfg.canBaseId, CM_TWAI_TX_GPIO, CM_TWAI_RX_GPIO);
     return true;
 }

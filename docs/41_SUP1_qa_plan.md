@@ -35,11 +35,22 @@
 
 ### 3.1 自動（CI の `lint` / `guard` ジョブ）
 
+`guard` の検査内容は **`tools/guard.sh`** に実装されており、CI とローカルで同じものを走らせる。
+
+```bash
+bash tools/guard.sh
+```
+
+> **コメントを除外する理由**: 「`twai_transmit` を使ってはならない」のような禁止事項は、
+> コード中のコメントに書いてこそ効果がある。素朴な `grep` だとその注意書き自体に反応して
+> 失敗するため、行コメント（行頭が `//` `*` `/*`）を除外してから判定する。
+> 行末コメントは除外しない（安全側に倒す）。
+
 | # | チェック | 実現方法 | 根拠 |
 |---|---|---|---|
 | S1 | コード整形 | `clang-format --dry-run -Werror`（`.clang-format` に準拠） | 可読性 |
 | S2 | **CAN 送信 API の混入禁止** | `twai_transmit` `twai_transmit_v2` の文字列がソースに存在しないこと | `RSK-06`, `SYS-07` |
-| S3 | **Listen Only 以外のモード指定禁止** | `TWAI_MODE_NORMAL` `TWAI_MODE_NO_ACK` が存在しないこと | `RSK-06` |
+| S3 | **自己テストモードの指定禁止** | `TWAI_MODE_NO_ACK` が存在しないこと（NORMAL は `DEC-04` により正当。`NO_ACK` は ACK を返さず `RSK-10` を再発させる） | `RSK-10` |
 | S4 | ドメイン層の依存分離 | `lib/rusefi_can/` `lib/signal_model/` に `Arduino.h` `esp_` `freertos` `lvgl.h` の include が無いこと | `DEC-06`, `SWR-10` |
 | S5 | マジックナンバー禁止（CAN スケーリング） | `lib/rusefi_can/src/` に `0.0001` `0.0333` 等の直書きが無いこと（`rusefi_can_spec.h` の定数のみ使用） | `SWD-01 §1.3` |
 | S6 | コンパイラ警告 | `-Wall -Wextra` で警告 0 件 | — |
