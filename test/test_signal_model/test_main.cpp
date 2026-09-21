@@ -1,5 +1,5 @@
 // SWE.4 ユニット検証: 信号モデル（鮮度・単位換算・設定）
-// UT-05 〜 UT-09, UT-11 〜 UT-15  (docs/30_test_strategy.md §2)
+// UT-05 〜 UT-09, UT-11 〜 UT-16  (docs/30_test_strategy.md §2)
 #include <unity.h>
 
 #include <atomic>
@@ -534,6 +534,46 @@ void test_UT15_snapshot_is_not_torn() {
     TEST_ASSERT_EQUAL_INT(0, mismatched);
 }
 
+// ---------------------------------------------------------------- UT-16
+// SWD-02: 更新時刻が読み出し時刻より「未来」でも Lost にしてはならない。
+//
+// UI タスクは loop() の先頭で millis() を取り、描画に十数ミリ秒かけてから
+// スナップショットを取る。その間に CAN タスク（別コア）がより新しい時刻で更新するため、
+// lastUpdateMs > takenAtMs になりうる。単純な符号なし減算ではアンダーフローして
+// 巨大な値になり「2000ms 以上更新なし」と誤判定され、受信中なのに NO SIGNAL が出る。
+// 実機の走行模擬で ageL=4294967287 (= -9) として観測した不具合の回帰テスト。
+void test_UT16_future_timestamp_is_not_lost() {
+    SignalStore st;
+
+    // 読み出し時刻より 9ms 未来に更新された状態を作る
+    st.update(SignalId::Lambda1, 0.95f, 1009);
+
+    const Snapshot s = st.snapshot(1000);
+    TEST_ASSERT_EQUAL(static_cast<int>(Freshness::Fresh), static_cast<int>(s.freshnessOf(SignalId::Lambda1)));
+    TEST_ASSERT_EQUAL_UINT32(0, s.ageMs(SignalId::Lambda1));
+
+    float v = 0.0f;
+    TEST_ASSERT_TRUE(s.get(SignalId::Lambda1, v));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.95f, v);
+}
+
+void test_UT16_future_timestamp_across_wraparound() {
+    // ラップアラウンドをまたいで「未来」に更新された場合も Fresh として扱うこと。
+    // 読み出しが 0xFFFFFFF0、更新が 0x00000005（ラップ後）= 21ms 未来。
+    SignalStore st;
+    st.update(SignalId::Egt1, 500.0f, 0x00000005u);
+    const Snapshot s = st.snapshot(0xFFFFFFF0u);
+    TEST_ASSERT_EQUAL(static_cast<int>(Freshness::Fresh), static_cast<int>(s.freshnessOf(SignalId::Egt1)));
+    TEST_ASSERT_EQUAL_UINT32(0, s.ageMs(SignalId::Egt1));
+
+    // 「未来」を 0 に丸めても、本当に古い信号まで Fresh にしてはならない。
+    SignalStore st2;
+    st2.update(SignalId::Egt1, 500.0f, 0xFFFFFF00u);
+    const Snapshot s2 = st2.snapshot(0x00000900u);  // 2560ms 経過
+    TEST_ASSERT_EQUAL(static_cast<int>(Freshness::Lost), static_cast<int>(s2.freshnessOf(SignalId::Egt1)));
+    TEST_ASSERT_EQUAL_UINT32(2560, s2.ageMs(SignalId::Egt1));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_UT05_zone_boundaries_exact);
@@ -570,5 +610,7 @@ int main(int, char**) {
     RUN_TEST(test_UT15_no_false_lost_even_when_reader_starves);
     RUN_TEST(test_UT15_snapshot_succeeds_under_realistic_load);
     RUN_TEST(test_UT15_snapshot_is_not_torn);
+    RUN_TEST(test_UT16_future_timestamp_is_not_lost);
+    RUN_TEST(test_UT16_future_timestamp_across_wraparound);
     return UNITY_END();
 }

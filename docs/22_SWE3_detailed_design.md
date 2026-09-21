@@ -91,6 +91,7 @@ struct Snapshot {
 | `void update(SignalId id, float v, uint32_t nowMs)` | CAN タスクからのみ呼ぶ | `seq` が 2 増加し、偶数で終わる |
 | `Snapshot snapshot(uint32_t nowMs) const` | UI タスクからのみ呼ぶ（読み出しは単一タスクに限る） | 全信号が同一の書き込み世代から読まれている。**空のスナップショット（全信号 Lost）を返さない**。再試行が全て失敗した場合は直前の成功結果をそのまま返す（`DOC-21 §5.1`） |
 | `uint32_t snapshotFailures() const` | — | 再試行が全滅した回数。診断ページに表示する（`SWR-92`）。0 以外になったら seqlock の調整が必要 |
+| `uint32_t Snapshot::ageMs(SignalId) const` | — | 最終更新からの経過時間。値そのものは返さないため `RSK-01` の契約に抵触しない。未受信は `0xFFFFFFFF`、未来の更新は `0` |
 | `Snapshot::get()` | — | `freshnessOf(id) == Lost` のとき `false` を返し、`out` を**変更しない** |
 
 ### 2.3 鮮度判定
@@ -102,8 +103,17 @@ struct Snapshot {
 | `500 <= nowMs - lastUpdateMs < 2000` | `Stale` |
 | `2000 <= nowMs - lastUpdateMs` | `Lost` |
 
-`nowMs` は 32 bit のラップアラウンド（約 49.7 日）を考慮し、必ず
-`(uint32_t)(nowMs - lastUpdateMs)` の符号なし減算で差分を取る。
+経過時間は `ageMs()` で求める。ここには 2 つの落とし穴がある。
+
+1. **32 bit のラップアラウンド**（約 49.7 日）。単純な大小比較ではなく差分で判定する。
+2. **更新時刻が読み出し時刻より「未来」になる**ことがある。
+   UI タスクは `loop()` の先頭で `millis()` を取り、描画に十数ミリ秒かけてから
+   スナップショットを取るため、その間に CAN タスク（別コア）がより新しい時刻で更新する。
+
+両方を `(int32_t)(takenAtMs - lastUpdateMs)` の**符号付き**差分で扱い、
+負（= 未来の更新）は 0 とみなす。符号なし減算のままだと未来の更新が
+アンダーフローして巨大な値になり、「2000 ms 以上更新なし」と誤判定される。
+実機の走行模擬で `ageL = 4294967287` (= −9) として観測した（`UT-16`）。
 
 ### 2.4 不変条件（重要）
 
