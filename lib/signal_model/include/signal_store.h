@@ -95,7 +95,13 @@ public:
     /// そのため、書き込み中は**完了を待ってから**読み出す。
     /// 書き込み側はロックを取らず数十ナノ秒で抜けるので、ここで待っても停滞しない。
     Snapshot snapshot(uint32_t nowMs) const {
-        Snapshot out;
+        // 直前に成功した内容で初期化しておく。
+        // seqlock は書き込み側のデューティが高いと読み出しが成立しないことがある
+        // （読み出しが飢餓になる。seqlock の既知の性質）。そのとき空のまま返すと
+        // 「全信号が未受信 = 全部 Lost」になり、受信が正常でも NO SIGNAL が出る。
+        // 直前の値を保つほうが安全で、takenAtMs は現在時刻にするため鮮度は正しく老い、
+        // 本当に途絶していればそのまま Stale -> Lost に落ちる（RSK-01 は損なわれない）。
+        Snapshot out  = m_lastGood;
         out.takenAtMs = nowMs;
 
         for (int attempt = 0; attempt < kMaxRetry; ++attempt) {
@@ -120,13 +126,9 @@ public:
             }
         }
 
-        // 全試行が失敗した場合に「全部 Lost」を返すと、受信が正常でも一瞬 NO SIGNAL が出る。
-        // 直前に成功したスナップショットを返す。鮮度は takenAtMs で正しく老いるため、
-        // 本当に信号が途絶していればそのまま Stale -> Lost に落ちる（RSK-01 は損なわれない）。
+        // 全試行が失敗。out は m_lastGood のままなので、空にはならない。
         ++m_snapshotFailures;
-        Snapshot fallback  = m_lastGood;
-        fallback.takenAtMs = nowMs;
-        return fallback;
+        return out;
     }
 
     /// 診断用（SWR-92）。0 以外になったら seqlock の調整が必要。

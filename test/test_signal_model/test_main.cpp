@@ -426,28 +426,56 @@ void test_UT14_millis_wraparound() {
 }
 
 // ---------------------------------------------------------------- UT-15
-// SWD-02: seqlock の再試行が書き込み側と競合しても、受信中の信号を Lost と
-// 報告してはならない。実機で「受信は 120 f/s で継続しているのに一瞬だけ
-// NO SIGNAL が出る」という形で踏んだ不具合の回帰テスト。
+// SWD-02 / DOC-21 §5.1: seqlock の読み出しが書き込みと競合しても、
+// 受信中の信号を Lost と報告してはならない。
+// 実機で「受信は 120 f/s で継続しているのに一瞬だけ NO SIGNAL が出る」という形で
+// 踏んだ不具合の回帰テスト。
 //
-// 論理時刻を固定して呼ぶため、鮮度は常に Fresh のはず。
-// ここで Lost が観測されたら、それはスナップショットが一度も埋められずに
-// 返ったことを意味する。
-void test_UT15_snapshot_never_reports_lost_while_writer_is_busy() {
+// 論理時刻を固定して呼ぶため鮮度は常に Fresh のはず。ここで Lost が観測されたら、
+// スナップショットが一度も埋められずに返ったことを意味する。
+
+/// 書き込みを止めずに回し続けるスレッド。
+/// busyGap を 0 にすると seqlock のデューティが 100 % に近くなり、
+/// 読み出しが構造的に成立しなくなる（seqlock の既知の性質。飢餓）。
+struct Writer {
+    SignalStore& st;
+    uint32_t t;
+    int busyGap;
+    std::atomic<bool> stop{false};
+    std::thread th;
+
+    Writer(SignalStore& s, uint32_t time, int gap) : st(s), t(time), busyGap(gap) {
+        th = std::thread([this] {
+            float v = 0.70f;
+            while (!stop.load(std::memory_order_relaxed)) {
+                v = (v > 1.29f) ? 0.70f : v + 0.01f;
+                // 2 つの λ は常に同じ値に保つ。読み側で食い違ったら世代が混ざっている。
+                st.update(SignalId::Lambda1, v, t);
+                st.update(SignalId::Lambda2, v, t);
+                st.update(SignalId::Egt1, 500.0f, t);
+                for (volatile int k = 0; k < busyGap; ++k) {
+                }
+            }
+        });
+    }
+    ~Writer() {
+        stop.store(true, std::memory_order_relaxed);
+        th.join();
+    }
+};
+
+/// 書き込みが飢餓を起こすほど高頻度でも、受信済みの信号を Lost と報告しないこと。
+/// 旧実装は空のスナップショットを返すため必ず失敗する。
+void test_UT15_no_false_lost_even_when_reader_starves() {
     SignalStore st;
     constexpr uint32_t kT = 1000;
 
     st.update(SignalId::Lambda1, 0.95f, kT);
+    st.update(SignalId::Lambda2, 0.95f, kT);
     st.update(SignalId::Egt1, 500.0f, kT);
+    (void)st.snapshot(kT);  // 競合の無い状態で 1 回確定させる（起動直後に相当）
 
-    std::atomic<bool> stop{false};
-    std::thread writer([&] {
-        while (!stop.load(std::memory_order_relaxed)) {
-            st.update(SignalId::Lambda1, 0.95f, kT);
-            st.update(SignalId::Egt1, 500.0f, kT);
-            st.update(SignalId::Rpm, 3000.0f, kT);
-        }
-    });
+    Writer w(st, kT, 0);  // 隙間なしで書き込み続ける = 読み出しは飢餓になりうる
 
     int lostSeen = 0;
     for (int i = 0; i < 100000; ++i) {
@@ -460,30 +488,35 @@ void test_UT15_snapshot_never_reports_lost_while_writer_is_busy() {
             ++lostSeen;
         }
     }
-
-    stop.store(true, std::memory_order_relaxed);
-    writer.join();
-
     TEST_ASSERT_EQUAL_INT(0, lostSeen);
 }
 
-// 書き込み中でも値が混ざらない（ティアリングしない）こと
+/// 実機相当の書き込み頻度（隙間あり）なら、スナップショットは毎回成立すること。
+/// 書き込み中に待たずリトライする旧実装ではここが 0 にならない。
+void test_UT15_snapshot_succeeds_under_realistic_load() {
+    SignalStore st;
+    constexpr uint32_t kT = 1000;
+
+    st.update(SignalId::Lambda1, 0.95f, kT);
+    (void)st.snapshot(kT);
+
+    Writer w(st, kT, 2000);  // 書き込みのあいだに十分な隙間を空ける
+
+    for (int i = 0; i < 20000; ++i) {
+        (void)st.snapshot(kT);
+    }
+    TEST_ASSERT_EQUAL_UINT32(0, st.snapshotFailures());
+}
+
+/// 世代が混ざらない（ティアリングしない）こと。
 void test_UT15_snapshot_is_not_torn() {
     SignalStore st;
     constexpr uint32_t kT = 1000;
     st.update(SignalId::Lambda1, 1.0f, kT);
     st.update(SignalId::Lambda2, 1.0f, kT);
+    (void)st.snapshot(kT);
 
-    std::atomic<bool> stop{false};
-    std::thread writer([&] {
-        float v = 0.70f;
-        while (!stop.load(std::memory_order_relaxed)) {
-            v = (v > 1.29f) ? 0.70f : v + 0.01f;
-            // 2 つの信号は常に同じ値に保たれる。読み側で食い違ったら世代が混ざっている。
-            st.update(SignalId::Lambda1, v, kT);
-            st.update(SignalId::Lambda2, v, kT);
-        }
-    });
+    Writer w(st, kT, 200);
 
     int mismatched = 0;
     for (int i = 0; i < 50000; ++i) {
@@ -498,10 +531,6 @@ void test_UT15_snapshot_is_not_torn() {
             }
         }
     }
-
-    stop.store(true, std::memory_order_relaxed);
-    writer.join();
-
     TEST_ASSERT_EQUAL_INT(0, mismatched);
 }
 
@@ -538,7 +567,8 @@ int main(int, char**) {
     RUN_TEST(test_UT13_monotonic_violation_rejected);
     RUN_TEST(test_UT13_range_violations_rejected);
     RUN_TEST(test_UT14_millis_wraparound);
-    RUN_TEST(test_UT15_snapshot_never_reports_lost_while_writer_is_busy);
+    RUN_TEST(test_UT15_no_false_lost_even_when_reader_starves);
+    RUN_TEST(test_UT15_snapshot_succeeds_under_realistic_load);
     RUN_TEST(test_UT15_snapshot_is_not_torn);
     return UNITY_END();
 }
