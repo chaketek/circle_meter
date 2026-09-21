@@ -8,7 +8,8 @@ DOC-30 の `IT-*` を実機で実行するための PC 側ハーネス（SWR-101
     python -m pip install --user python-can
 
 使い方:
-    python tools/pcan_send.py --mode drive        実走模擬（推奨。20 秒周期で繰り返す）
+    python tools/pcan_send.py --mode drive        実走模擬（既定。20 秒周期で繰り返す）
+    python tools/pcan_send.py --mode drive --lambda-tau-ms 0    λ の応答遅れを無効化
     python tools/pcan_send.py --mode idle
     python tools/pcan_send.py --mode sweep
     python tools/pcan_send.py --mode egt-danger
@@ -169,6 +170,11 @@ class DriveCycle:
     | 減速 | 20 に張り付き | 燃料カット（噴射停止） |
     | 燃料カット復帰 | 12.5 前後 | 復帰時の一時的なリッチ |
 
+    λ には一次遅れ（既定 300 ms）を掛ける。実際のワイドバンドセンサと ECU のフィルタには
+    応答遅れがあり、バス上に階段状の λ が出ることはないため。
+    リーンスパイクと復帰リッチは、この遅れで鈍ったあとに上表の値へ届くよう
+    持続時間を取ってある（実車でも過渡増量は一瞬では終わらない）。
+
     排気温度は空燃比と負荷から目標値を作り、一次遅れを掛ける（熱容量の模擬）。
     目標値の基準は DOC-23 §4 の想定に合わせた。
       アイドル 400 / 定常 14.7 で 600 / リッチ化で約 -100 / 燃料カットで 400
@@ -183,8 +189,11 @@ class DriveCycle:
     # (終了時刻, 名前, ギア, rpm0, rpm1, v0, v1, afr0, afr1, MAP, 噴射duty, EGT目標, 燃料カット)
     PHASES = [
         (3.00, "IDLE",       0,  850,  850,  0,  0, 14.7, 14.7, 35,  3, 400, False),
-        (3.40, "TIP-IN",     1, 1100, 1600,  0,  8, 14.7, 16.2, 70, 12, 520, False),
-        (3.80, "LEAN SPIKE", 1, 1600, 2600,  8, 13, 16.2, 13.0, 95, 30, 700, False),
+        # リーンスパイクと復帰リッチは、λ の一次遅れ (LAMBDA_TAU_MS) で鈍ったあとに
+        # 指定値へ届くよう持続時間を取ってある。実車でも過渡増量は一瞬では終わらない。
+        (3.30, "TIP-IN",     1, 1100, 1400,  0,  5, 14.7, 16.4, 70, 12, 520, False),
+        (3.60, "LEAN SPIKE", 1, 1400, 2000,  5, 10, 16.4, 16.4, 88, 22, 620, False),
+        (3.95, "SPIKE DECAY", 1, 2000, 2600, 10, 13, 16.4, 13.0, 95, 30, 700, False),
         (5.60, "1ST WOT",    1, 2600, 5200, 13, 26, 13.0, 13.0, 98, 42, 800, False),
         (5.90, "SHIFT 1-2",  0, 5200, 3000, 26, 26, 17.5, 17.5, 30,  4, 640, False),
         (8.10, "2ND WOT",    2, 3000, 5175, 26, 45, 13.0, 13.0, 98, 45, 820, False),
@@ -197,7 +206,7 @@ class DriveCycle:
         (15.60, "CUT 4TH",   4, 2940, 1715, 60, 35, 20.0, 20.0, 25,  0, 400, True),
         (16.50, "CUT 3RD",   3, 2520, 1440, 35, 20, 20.0, 20.0, 25,  0, 400, True),
         (17.20, "CUT 2ND",   2, 2300, 1035, 20,  9, 20.0, 20.0, 25,  0, 400, True),
-        (17.70, "RECOVER",   0, 1300, 1050,  9,  2, 12.5, 12.5, 45, 16, 480, False),
+        (18.40, "RECOVER",   0, 1300, 1050,  9,  2, 12.1, 12.1, 45, 16, 480, False),
         (20.00, "IDLE RET",  0, 1050,  850,  2,  0, 13.5, 14.7, 35,  4, 420, False),
     ]
     PERIOD_S = 20.0
@@ -206,8 +215,15 @@ class DriveCycle:
     TAU_UP_MS = 1200.0
     TAU_DOWN_MS = 1800.0
 
-    def __init__(self):
+    # 空燃比の一次遅れ。実際のワイドバンドセンサと ECU のフィルタには応答遅れがあり、
+    # バス上に階段状の λ が出ることはない。表示側の見え方を実物に近づけるために入れる。
+    # 排気温度の目標値は「実際の燃焼」で決まるのでフィルタ前の空燃比から計算する。
+    LAMBDA_TAU_MS = 300.0
+
+    def __init__(self, lambda_tau_ms: float = LAMBDA_TAU_MS):
         self.egt = 400.0
+        self.afr_tau_ms = lambda_tau_ms
+        self.afr_filt = None
 
     def sample(self, t: float, dt_ms: float) -> Sample:
         tc = t % self.PERIOD_S
@@ -232,9 +248,16 @@ class DriveCycle:
                 alpha = dt_ms / (tau + dt_ms) if dt_ms > 0 else 0.0
                 self.egt += alpha * (target - self.egt)
 
+                # λ センサの応答遅れ。バスに出るのはこちらの値。
+                if self.afr_filt is None or self.afr_tau_ms <= 0.0:
+                    self.afr_filt = afr
+                else:
+                    a = dt_ms / (self.afr_tau_ms + dt_ms) if dt_ms > 0 else 0.0
+                    self.afr_filt += a * (afr - self.afr_filt)
+
                 return Sample(
                     phase=name,
-                    afr=afr,
+                    afr=self.afr_filt,
                     egt=self.egt,
                     rpm=lerp(r0, r1, u),
                     speed=lerp(v0, v1, u),
@@ -340,6 +363,8 @@ def main() -> None:
     ap.add_argument("--base", default="0x200")
     ap.add_argument("--period-ms", type=int, default=50, help="送信周期。rusEFI の canSleepPeriodMs 相当")
     ap.add_argument("--extended", action="store_true", help="29bit 拡張 ID で送る")
+    ap.add_argument("--lambda-tau-ms", type=float, default=DriveCycle.LAMBDA_TAU_MS,
+                    help="--mode drive の λ 一次遅れ時定数 [ms]。0 でフィルタ無効")
     ap.add_argument("--csv", default=None, help="--mode replay のときの CSV")
     ap.add_argument("--no-loop", action="store_true", help="replay を 1 回だけ再生する")
     ap.add_argument("--listen", type=float, default=None, help="送信せず N 秒バスを観測する (IT-04)")
@@ -373,7 +398,7 @@ def main() -> None:
         if args.mode == "burst":
             period = 0.005  # IT-03: 200 Hz で全フレームを投げ、取りこぼしを確認する
 
-        drive = DriveCycle()
+        drive = DriveCycle(args.lambda_tau_ms)
         print(
             f"mode={args.mode} base={base:#05x} bitrate={args.bitrate} "
             f"period={period * 1000:.0f}ms ext={args.extended}\nCtrl+C で停止"
