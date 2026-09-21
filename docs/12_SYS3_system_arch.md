@@ -21,7 +21,7 @@ flowchart TB
 
     subgraph HW["circle_meter ハードウェア"]
       SA3["SA-03 CAN Unit\nTJA1051T/3"]
-      SA1["SA-01 M5Stack Dial v1.1\nESP32-S3FN8 / 8MB Flash / 8MB PSRAM"]
+      SA1["SA-01 M5Stack Dial v1.1\nESP32-S3FN8 / 8MB Flash\n512KB SRAM / PSRAM なし"]
       SA2["SA-02 丸型 LCD\nGC9A01 240x240 SPI"]
       SA4["SA-04 ロータリーエンコーダ\n+ 押しボタン"]
       SA5["SA-05 タッチ FT3267 (I2C)"]
@@ -49,7 +49,7 @@ flowchart TB
 
 | ID | 要素 | 型番 / 仕様 | 根拠要求 |
 |---|---|---|---|
-| `SA-01` | メイン基板 | M5Stack Dial v1.1 (M5StampS3A / ESP32-S3FN8, 240 MHz dual core, 512 KB SRAM, 8 MB PSRAM, 8 MB Flash) | `CST-01` |
+| `SA-01` | メイン基板 | M5Stack Dial v1.1 (M5StampS3 / ESP32-S3**FN8**, 240 MHz dual core, 512 KB 内蔵 SRAM, 8 MB Flash, **PSRAM なし**) | `CST-01` |
 | `SA-02` | 表示器 | 1.28" 丸型 TFT, GC9A01, 240×240, SPI | `SYS-10` |
 | `SA-03` | CAN トランシーバ | M5Stack CAN Unit (TJA1051T/3), Grove HY2.0-4P | `CST-02`, `SYS-01` |
 | `SA-04` | 入力（主） | ロータリーエンコーダ 16 ディテント / 64 パルス回転 + 押しボタン | `SYS-30` |
@@ -123,7 +123,7 @@ CAN Unit が本来想定する PORT.C ではなく、M5Dial が持つ **PORT.B (
 | `DEC-02` | λ リングバーは LVGL の `lv_arc` ではなく **自前 Canvas 描画**とする | `lv_arc` を多段に重ねる | 色分け・目盛・アンチエイリアスを 1 パスで描くため。`lv_arc` は色が単一で、5 色グラデ表現に多重化が必要になり負荷と実装が増える |
 | `DEC-03` | CAN 受信とレンダリングを **別タスク・別コア**に分離 | 単一ループでポーリング | 描画の一時的な重さが受信取りこぼしを起こさないため (`SYS-06`) |
 | `DEC-04` | TWAI を **Listen Only モード**で初期化 | Normal モード | 物理的に送信できない状態を作り、`RSK-06` を設計で潰す |
-| `DEC-05` | 描画バッファは **内部 SRAM に 240×120 の部分バッファ ×2** | PSRAM に全画面バッファ | PSRAM は帯域が内部 SRAM より低く、LVGL のフラッシュ時にボトルネックになる。240×120×2byte = 57.6 KB ×2 = 115 KB を内部 SRAM から確保 |
+| `DEC-05` | 描画バッファは **内蔵 SRAM に 240×120 の部分バッファ ×2** | 全画面バッファ（PSRAM 前提） | **本機に PSRAM は実装されていない**（`§7.1`）。全画面バッファ 112.5 KB を内蔵 SRAM に置くと残りが苦しいため、240×120×2byte = 57.6 KB ×2 = 115 KB の部分バッファ 2 面とし、DMA 転送とレンダリングをオーバーラップさせる |
 | `DEC-06` | CAN デコード層を **ハードウェア非依存の純粋関数**として分離 | ドライバ内でデコード | PC 上 (`native` 環境) で単体テストを回すため (`SWE.4`) |
 | `DEC-07` | 電源は ACC 連動とし、遅延 OFF やスーパーキャパシタを設けない | 常時電源 + ソフト OFF | 設定は NVS に即時保存するため、電源断で失うデータがない (`SYS-35`) |
 
@@ -163,7 +163,30 @@ stateDiagram-v2
 | リソース | 総量 | 予算 | 備考 |
 |---|---|---|---|
 | 内部 SRAM | 512 KB | LVGL 描画バッファ 115 KB / LVGL ヒープ 48 KB / タスクスタック 24 KB | 空き 150 KB 以上を維持（`SYS-62` で監視） |
-| PSRAM | 8 MB | フォント・ロゴ画像のキャッシュ | 描画パスには使わない (`DEC-05`) |
+| PSRAM | **なし** | — | 下記 §7.1「PSRAM 非搭載の確定経緯」 |
 | Flash | 8 MB | アプリ 2 MB × 2 (OTA 予備) + NVS + SPIFFS(ロゴ) | パーティション定義は `DOC-40` |
 | CPU Core 0 | — | CAN 受信・デコード・鮮度管理（負荷目標 < 10 %） | |
 | CPU Core 1 | — | LVGL + 描画（負荷目標 < 70 % @ 30 fps） | |
+
+### 7.1 PSRAM 非搭載の確定経緯
+
+一部の通販ページや第三者サイトは M5Dial の仕様を「8 MB PSRAM」と記載しているが、
+**これは誤りである**。実機ブリングアップ（2026-09-21）で以下を確認した。
+
+```
+E (115) opi psram: PSRAM ID read error: 0x00000000, PSRAM chip not found or not supported
+E (116) spiram: SPI RAM enabled but initialization failed. Bailing out.
+```
+
+搭載 SoC は **ESP32-S3FN8**（`FN8` = 8 MB 内蔵 Flash / PSRAM なし）である。
+`platformio.ini` から `-DBOARD_HAS_PSRAM` を外し、
+`board_build.arduino.memory_type = qio_qspi` とした。
+
+**設計への影響**: 使えるのは内蔵 SRAM 512 KB（Arduino から見えるヒープは約 320 KB）だけになる。
+描画バッファ 115 KB + LVGL ヒープ 48 KB を確保しても余裕はあるが、
+フォントやロゴ画像を RAM にキャッシュする余地はない。
+フォント・ロゴは **Flash 上の const 配列から直接参照**する設計とする（`DOC-23 §9`）。
+空きヒープは診断ページで常時監視する（`SWR-92`）。
+
+実測値（P1 骨格ファームウェア、2026-09-21）: RAM 23,256 / 327,680 bytes (7.1 %)、
+Flash 512,797 / 3,145,728 bytes (16.3 %)。

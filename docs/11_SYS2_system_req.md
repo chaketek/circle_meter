@@ -129,7 +129,14 @@ flowchart LR
 | ID | 内容 | 期限 |
 |---|---|---|
 | `OPN-01` | 所有する CAN Unit の型番確定（Unit CAN `U085` / Mini CAN `U179`）と終端抵抗の有無 | 実装フェーズ前 |
-| `OPN-02` | M5Dial PORT.B の GPIO 割当（G1/G2）と Grove 線色の対応（黄/白どちらが G1 か）を実測確認 | ブリングアップ時 |
+| `OPN-02` | M5Dial PORT.B の Grove 線色と GPIO（G1/G2）の対応、および TX/RX の向きを実測確認。TWAI の初期化自体は GPIO 2/1 で成功することを 2026-09-21 に確認済み（CAN Unit 未接続のため受信は未確認） | ブリングアップ時 |
 | `OPN-03` | 車両 rusEFI 側で `Lambda1` / `EGT1` が構成済みか、`canSleepPeriodMs` の実設定値 | 実装フェーズ前 |
 | `OPN-04` | 高温環境対策（`RSK-03`）の具体策 | v1.0 リリース前 |
 | `OPN-05` | オープニング画面用ロゴ素材の入手・フォーマット | HMI 実装前 |
+
+## 5. 解決済み事項
+
+| ID | 内容 | 結論 | 日付 |
+|---|---|---|---|
+| `OPN-06` | M5Dial に PSRAM は搭載されているか | **搭載されていない**。SoC は ESP32-S3FN8（8 MB Flash / PSRAM なし）。通販ページの「8 MB PSRAM」表記は誤り。詳細と設計への影響は `DOC-12 §7.1` | 2026-09-21 |
+| `OPN-07` | ESP32-S3 の TWAI を PORT.B (G1/G2) に割り当てられるか | **可能**。GPIO マトリクス経由で `TWAI_MODE_LISTEN_ONLY` の初期化が成功することを実機で確認 | 2026-09-21 |

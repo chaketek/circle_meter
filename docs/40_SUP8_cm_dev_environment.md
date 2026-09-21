@@ -75,7 +75,7 @@ pio test -e native         # ドメイン層の単体テスト（PC 上で実行
 | PlatformIO board | `m5stack-stamps3` |
 | framework | `arduino` |
 | Flash | 8 MB, QIO, 80 MHz |
-| PSRAM | 8 MB, OPI |
+| PSRAM | **なし**（ESP32-S3FN8）。`memory_type = qio_qspi` |
 | パーティション | `partitions_8mb.csv`（app0 3 MB / app1 3 MB / nvs / spiffs） |
 | CPU | 240 MHz |
 | USB | ESP32-S3 ネイティブ USB-CDC（USB-C 直結） |
@@ -238,9 +238,9 @@ GitHub Issues で一元管理する。文書は作らず、ラベルで区別す
 
 | フェーズ | 内容 | 完了条件 | 状態 |
 |---|---|---|---|
-| **P0. 文書化** | `DOC-00` – `DOC-50` 作成 | 本文書一式のレビュー完了 | 実施中 |
-| **P1. 骨格** | リポジトリ構成、`platformio.ini`、CI、ドメイン層の型定義とスタブ、単体テストの枠 | `pio test -e native` と `pio run -e m5dial` が CI で green | 実施中 |
-| **P2. ブリングアップ** | `OPN-01` – `OPN-03` の実測解決。CAN 受信が動くこと | 実車またはベンチで `0x207` / `0x209` を受信し、シリアルに値が出る | 未着手 |
+| **P0. 文書化** | `DOC-00` – `DOC-50` 作成 | 本文書一式のレビュー完了 | ✅ 完了 (2026-09-21) |
+| **P1. 骨格** | リポジトリ構成、`platformio.ini`、CI、ドメイン層、単体テスト、ブリングアップ FW | `pio test -e native` (45 件) と `pio run -e m5dial` が green、実機で起動確認 | ✅ 完了 (2026-09-21) |
+| **P2. ブリングアップ** | `OPN-01` – `OPN-03` の実測解決。CAN 受信が動くこと | 実車またはベンチで `0x207` / `0x209` を受信し、シリアルに値が出る | ⏳ 実施中（TWAI 初期化と表示は確認済み。CAN Unit 接続が残り） |
 | **P3. ドメイン実装** | デコーダ・信号ストア・単位換算の完成 + `UT-*` 全件 | `UT-01` – `UT-13` 全て pass | 未着手 |
 | **P4. HMI 実装** | λ リング・数値・EGT・ページ管理・スプラッシュ | `QT-02` / `QT-03` 合格 | 未着手 |
 | **P5. 設定・診断** | 設定メニュー・NVS・診断ページ | `IT-05` / `IT-13` 合格 | 未着手 |
