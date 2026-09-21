@@ -91,19 +91,23 @@ PowerShell からは `tools/` のスクリプトが使えます。
 
 ## 配線
 
-| Grove 線色 | CAN Unit | M5Dial PORT.B | 備考 |
+| Grove 線色 | CAN Unit | M5Dial **PORT.A** | 備考 |
 |---|---|---|---|
 | 黒 | GND | GND | |
 | 赤 | 5V | 5V | |
-| 黄 | CAN_TX | G2（暫定） | `CM_TWAI_TX_GPIO` |
-| 白 | CAN_RX | G1（暫定） | `CM_TWAI_RX_GPIO` |
+| 黄 | CAN_TX | **G13** | `CM_TWAI_TX_GPIO=13` |
+| 白 | CAN_RX | **G15** | `CM_TWAI_RX_GPIO=15` |
 
 > **接続前に必ず確認**: 車両 CAN バスの CAN_H–CAN_L 間抵抗が約 60 Ω であること。
 > CAN Unit 側にも終端抵抗があると約 40 Ω になり、バス全体の通信品質が劣化します
 > （`RSK-02` / `IT-10`）。
 >
-> GPIO 割当と TX/RX の向きはブリングアップで実測確定します（`OPN-02`）。
+> 上記は 2026-09-21 のブリングアップで実測確定済みです（`OPN-02`）。
 > 入れ替えはビルドフラグ `CM_TWAI_TX_GPIO` / `CM_TWAI_RX_GPIO` の変更だけで対応できます。
+
+> **ACK について**: 本機は CAN の ACK を返します（`RSK-10`）。ACK を返さない
+> Listen Only 構成では、バス上が ECU と本機の 2 ノードだけのとき ECU が再送を
+> 繰り返してバスオフに陥ります。フレームの送出は一切行いません。
 
 ## ECU 側の前提設定
 
