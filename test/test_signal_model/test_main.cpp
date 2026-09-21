@@ -2,6 +2,9 @@
 // UT-05 〜 UT-09, UT-11 〜 UT-14  (docs/30_test_strategy.md §2)
 #include <unity.h>
 
+#include <cstring>
+#include <new>
+
 #include "button_fsm.h"
 #include "config.h"
 #include "rusefi_decoder.h"
@@ -292,6 +295,49 @@ void test_UT13_default_config_is_valid() {
     TEST_ASSERT_TRUE(validate(c));
 }
 
+void test_UT13_crc_is_independent_of_padding() {
+    // 構造体のメモリ像をそのまま CRC にかけるとパディングの不定値が混ざり、
+    // 同じ設定値でも CRC が変わりうる（SWD-04）。フィールド単位で積んでいることを確認する。
+    alignas(Config) unsigned char rawA[sizeof(Config)];
+    alignas(Config) unsigned char rawB[sizeof(Config)];
+    memset(rawA, 0x00, sizeof(rawA));
+    memset(rawB, 0xFF, sizeof(rawB));
+
+    Config* a = new (rawA) Config();
+    Config* b = new (rawB) Config();
+    *a        = defaultConfig();
+    *b        = defaultConfig();
+
+    TEST_ASSERT_EQUAL_UINT32(computeCrc(*a), computeCrc(*b));
+    TEST_ASSERT_TRUE(validate(*a));
+    TEST_ASSERT_TRUE(validate(*b));
+}
+
+void test_UT13_every_field_affects_crc() {
+    // computeCrc へのフィールド追加漏れを検出する
+    const Config base = defaultConfig();
+
+    Config c   = base;
+    c.lastPage = 3;
+    TEST_ASSERT_NOT_EQUAL(computeCrc(base), computeCrc(c));
+
+    c               = base;
+    c.canExtendedId = true;
+    TEST_ASSERT_NOT_EQUAL(computeCrc(base), computeCrc(c));
+
+    c             = base;
+    c.egt.dangerC = 950;
+    TEST_ASSERT_NOT_EQUAL(computeCrc(base), computeCrc(c));
+
+    c                  = base;
+    c.zones.optimalMax = 1.05f;
+    TEST_ASSERT_NOT_EQUAL(computeCrc(base), computeCrc(c));
+
+    c               = base;
+    c.buzzerEnabled = false;
+    TEST_ASSERT_NOT_EQUAL(computeCrc(base), computeCrc(c));
+}
+
 void test_UT13_crc_mismatch_detected() {
     Config c     = defaultConfig();
     c.brightness = 2;  // CRC を更新せずに値だけ変える
@@ -403,6 +449,8 @@ int main(int, char**) {
     RUN_TEST(test_UT12_between_short_and_long_yields_nothing);
     RUN_TEST(test_UT12_long_press_fires_once_before_release);
     RUN_TEST(test_UT13_default_config_is_valid);
+    RUN_TEST(test_UT13_crc_is_independent_of_padding);
+    RUN_TEST(test_UT13_every_field_affects_crc);
     RUN_TEST(test_UT13_crc_mismatch_detected);
     RUN_TEST(test_UT13_version_mismatch_detected);
     RUN_TEST(test_UT13_monotonic_violation_rejected);

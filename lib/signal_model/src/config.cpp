@@ -1,7 +1,9 @@
 // SWA-06 / SWD-04 実装
 #include "config.h"
 
+#include <cstddef>
 #include <cstring>
+#include <type_traits>
 
 namespace cm {
 namespace {
@@ -18,6 +20,26 @@ uint32_t crc32Update(uint32_t crc, const uint8_t* data, size_t len) {
     return crc;
 }
 
+/// CRC を「構造体のメモリ像」ではなく「フィールドの列」に対して取るための補助。
+///
+/// 構造体をそのまま reinterpret_cast して CRC を取ると、**パディングバイトが混ざる**。
+/// パディングの中身は不定であり、同じ設定値でもビルドや実行のたびに CRC が変わりうる。
+/// それに気づかないまま NVS に保存すると「保存したのに次回起動で既定値に戻る」
+/// という再現性の低い不具合になるため、フィールド単位で積む（SWD-04 / UT-13）。
+class CrcAccumulator {
+public:
+    template <typename T>
+    void add(const T& v) {
+        static_assert(std::is_trivially_copyable<T>::value, "trivially copyable なフィールドのみ");
+        m_crc = crc32Update(m_crc, reinterpret_cast<const uint8_t*>(&v), sizeof(T));
+    }
+
+    uint32_t value() const { return ~m_crc; }
+
+private:
+    uint32_t m_crc = 0xFFFFFFFFu;
+};
+
 bool inRange(float v, float lo, float hi) {
     return v >= lo && v <= hi;
 }
@@ -31,10 +53,27 @@ Config defaultConfig() {
 }
 
 uint32_t computeCrc(const Config& c) {
-    // crc32 フィールド自身を除く先頭部分を対象にする。
-    // 構造体末尾に crc32 があることを前提とする（config.h のレイアウトを変えるときは注意）。
-    const size_t len = offsetof(Config, crc32);
-    return ~crc32Update(0xFFFFFFFFu, reinterpret_cast<const uint8_t*>(&c), len);
+    // crc32 自身は対象外。フィールドを追加したら必ずここにも追加すること
+    // （追加を忘れると、そのフィールドを変えても CRC が変わらない）。
+    CrcAccumulator a;
+    a.add(c.version);
+    a.add(c.showAfr);
+    a.add(c.stoich);
+    a.add(c.ringLo);
+    a.add(c.ringHi);
+    a.add(c.zones.richHeavyMax);
+    a.add(c.zones.richMax);
+    a.add(c.zones.optimalMax);
+    a.add(c.zones.leanMax);
+    a.add(c.egt.warnC);
+    a.add(c.egt.dangerC);
+    a.add(c.brightness);
+    a.add(c.buzzerEnabled);
+    a.add(c.lastPage);
+    a.add(c.canBaseId);
+    a.add(c.canBitrateKbps);
+    a.add(c.canExtendedId);
+    return a.value();
 }
 
 bool validateMonotonic(const Config& c) {
