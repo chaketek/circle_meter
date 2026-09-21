@@ -24,6 +24,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -140,14 +141,31 @@ def main() -> None:
     port = find_port(args.port)
     print(f"== ベンチ確認 mode={args.mode} port={port} {args.seconds:.0f}秒 ==")
 
+    # 送信側の出力はファイルへ逃がす。
+    # subprocess.PIPE にして読まずに放置すると、Windows のパイプバッファ（4KB）が
+    # 20 秒ほどで埋まり、送信側が書き込みでブロックして CAN 送出が止まる。
+    # そうなると「受信が途中で止まった」ように見えて、原因を本体側と誤認する。
+    sender_log = os.path.join(tempfile.gettempdir(), "circle_meter_pcan_send.log")
+    log_fp = open(sender_log, "w", encoding="utf-8", errors="replace")
     sender = subprocess.Popen(
         [sys.executable, "-u", os.path.join(HERE, "pcan_send.py"),
          "--mode", args.mode, "--channel", args.channel],
-        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-        errors="replace")
+        cwd=ROOT, stdout=log_fp, stderr=subprocess.STDOUT)
+
+    def sender_output() -> str:
+        try:
+            log_fp.flush()
+        except Exception:
+            pass
+        try:
+            with open(sender_log, encoding="utf-8", errors="replace") as fp:
+                return fp.read()
+        except Exception:
+            return ""
+
     time.sleep(2.0)
     if sender.poll() is not None:
-        print(sender.stdout.read())
+        print(sender_output())
         sys.exit("PCAN 送信が開始できませんでした")
 
     rows, none_rows, lines = [], 0, 0
@@ -194,11 +212,20 @@ def main() -> None:
             rows.append(row)
         ser.close()
     finally:
+        sender_died = sender.poll() is not None
         sender.terminate()
         try:
             sender.wait(timeout=3)
         except Exception:
             sender.kill()
+        log_fp.close()
+
+    # 送信側が観測中に落ちていたら、受信が途切れたのは本体のせいではない
+    if sender_died:
+        print("\n**PCAN 送信プロセスが観測中に終了しました。** 判定は本体の評価になりません。")
+        print("--- 送信側の出力 ---")
+        print(sender_output())
+        sys.exit(2)
 
     if not rows:
         sys.exit("M5Dial から 1 行も受信できませんでした。配線・ポート・ファームウェアを確認してください。")
@@ -252,6 +279,13 @@ def main() -> None:
             print(f"    {name:<18} {n:3d}")
 
     c.report()
+
+    # 受信が途中で止まっていないか（送信側の停止と本体の不具合を取り違えないため）
+    stalled = [i for i in range(1, len(rows)) if rows[i]["fps"] == 0]
+    if stalled:
+        print(f"\n**受信が観測中に {len(stalled)} 回 f/s=0 になりました。**")
+        print("  ageL が単調に増えていれば、止まったのは送信側でバス上にフレームが無い状態です。")
+        print(f"  送信側の出力: {sender_log}")
 
     if args.mode == "drive":
         print("""
