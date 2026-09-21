@@ -85,33 +85,64 @@ public:
     }
 
     /// UI タスクからのみ呼ぶ。全信号を一貫した世代から読み出す。
+    ///
+    /// 【実装上の落とし穴 — 実機で踏んだ不具合】
+    /// 当初は seq が奇数（書き込み中）のとき即座に次の試行へ `continue` していた。
+    /// この空回りは数ナノ秒しかかからないため、**試行回数の上限に達するまでの全部が
+    /// 書き込み側のクリティカルセクション 1 回の内側に収まってしまう**ことがある。
+    /// その場合 out が一度も埋められず「全信号が未受信 = 全部 Lost」が返り、
+    /// 受信が正常に続いているのに一瞬だけ NO SIGNAL が出る。
+    /// そのため、書き込み中は**完了を待ってから**読み出す。
+    /// 書き込み側はロックを取らず数十ナノ秒で抜けるので、ここで待っても停滞しない。
     Snapshot snapshot(uint32_t nowMs) const {
-        Snapshot out;
+        // 直前に成功した内容で初期化しておく。
+        // seqlock は書き込み側のデューティが高いと読み出しが成立しないことがある
+        // （読み出しが飢餓になる。seqlock の既知の性質）。そのとき空のまま返すと
+        // 「全信号が未受信 = 全部 Lost」になり、受信が正常でも NO SIGNAL が出る。
+        // 直前の値を保つほうが安全で、takenAtMs は現在時刻にするため鮮度は正しく老い、
+        // 本当に途絶していればそのまま Stale -> Lost に落ちる（RSK-01 は損なわれない）。
+        Snapshot out  = m_lastGood;
         out.takenAtMs = nowMs;
 
-        // 書き込みが頻繁でもリトライは実用上 1-2 回で収束する。
-        // 上限を設けて無限ループを防ぐ（最後の試行の内容をそのまま使う）。
         for (int attempt = 0; attempt < kMaxRetry; ++attempt) {
-            const uint32_t s0 = m_seq.load(std::memory_order_acquire);
-            if (s0 & 1u)
-                continue;  // 書き込み中
+            uint32_t s0 = m_seq.load(std::memory_order_acquire);
+
+            // 書き込み中なら完了を待つ。load 自体がメモリアクセスなので空回りにならない。
+            for (int spin = 0; (s0 & 1u) != 0 && spin < kMaxSpin; ++spin) {
+                s0 = m_seq.load(std::memory_order_acquire);
+            }
+            if (s0 & 1u) {
+                continue;  // 待っても抜けなかった（現実には起こらない）
+            }
 
             for (size_t i = 0; i < kSignalCount; ++i) {
                 out.m_s[i] = m_s[i];
             }
 
             std::atomic_thread_fence(std::memory_order_acquire);
-            if (m_seq.load(std::memory_order_relaxed) == s0)
-                break;
+            if (m_seq.load(std::memory_order_relaxed) == s0) {
+                m_lastGood = out;
+                return out;
+            }
         }
+
+        // 全試行が失敗。out は m_lastGood のままなので、空にはならない。
+        ++m_snapshotFailures;
         return out;
     }
 
+    /// 診断用（SWR-92）。0 以外になったら seqlock の調整が必要。
+    uint32_t snapshotFailures() const { return m_snapshotFailures; }
+
 private:
     static constexpr int kMaxRetry = 8;
+    static constexpr int kMaxSpin  = 1000;
 
     mutable std::atomic<uint32_t> m_seq{0};
     SignalValue m_s[kSignalCount];
+
+    mutable Snapshot m_lastGood{};
+    mutable uint32_t m_snapshotFailures = 0;
 };
 
 }  // namespace cm
