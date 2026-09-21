@@ -15,9 +15,9 @@ enum class ButtonEvent : uint8_t { None = 0, Short, Long };
 /// 長押しは「離す前に」1 回だけ発火し、その後離しても短押しは発火しない。
 class ButtonFsm {
 public:
-    static constexpr uint32_t kDebounceMs  = 20;
-    static constexpr uint32_t kShortMaxMs  = 600;
-    static constexpr uint32_t kLongMs      = 1500;
+    static constexpr uint32_t kDebounceMs = 20;
+    static constexpr uint32_t kShortMaxMs = 600;
+    static constexpr uint32_t kLongMs     = 1500;
 
     /// @param pressed 生のレベル（true = 押下）
     /// @param nowMs   単調増加するミリ秒
@@ -61,12 +61,12 @@ public:
     void reset() { *this = ButtonFsm{}; }
 
 private:
-    bool     m_rawState       = false;
-    bool     m_stableState    = false;
-    bool     m_debouncePendng = false;
-    bool     m_longFired      = false;
-    uint32_t m_lastChangeMs   = 0;
-    uint32_t m_pressStartMs   = 0;
+    bool m_rawState         = false;
+    bool m_stableState      = false;
+    bool m_debouncePendng   = false;
+    bool m_longFired        = false;
+    uint32_t m_lastChangeMs = 0;
+    uint32_t m_pressStartMs = 0;
 };
 
 }  // namespace cm

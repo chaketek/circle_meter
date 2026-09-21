@@ -22,24 +22,36 @@ using namespace cm;
 
 namespace {
 
-Config      g_cfg;
+Config g_cfg;
 SignalStore g_store;
-CanDriver   g_can;
+CanDriver g_can;
+
+// 暫定 UI 用のオフスクリーンバッファ。
+// 直接ディスプレイに描くと全消去 -> 再描画の間が見えて明滅する。
+// 1 フレーム分をまとめて転送することでティアリングと明滅を消す。
+// 本番 UI (P4) では LVGL の部分バッファ 2 面に置き換える (DEC-05)。
+M5Canvas g_canvas(&M5Dial.Display);
+bool g_canvasReady = false;
 
 constexpr uint32_t kUiPeriodMs = 33;  // 約 30fps（SYS-12）
+
+// 実フレームレートの計測（SYS-12 の早期データ点。正式には QT-03 で測る）
+uint32_t g_frameCount   = 0;
+uint32_t g_frameUsTotal = 0;
 
 // ---------------------------------------------------------------- CAN 受信タスク
 // SWA-02 CanRxTask: Core 0 に固定する（DEC-03）
 void canRxTask(void*) {
 #ifdef CM_ENABLE_CAN_SIM
     // SWR-100: 実 CAN の代わりに λ / EGT をスイープする
-    float    lambda = 0.68f;
-    float    egtC   = 300.0f;
-    int8_t   dir    = 1;
+    float lambda = 0.68f;
+    float egtC   = 300.0f;
+    int8_t dir   = 1;
     for (;;) {
         const uint32_t now = millis();
         lambda += 0.004f * dir;
-        if (lambda > 1.36f || lambda < 0.68f) dir = -dir;
+        if (lambda > 1.36f || lambda < 0.68f)
+            dir = -dir;
         egtC = 300.0f + (lambda - 0.68f) * 900.0f;
 
         g_store.update(SignalId::Lambda1, lambda, now);
@@ -57,8 +69,7 @@ void canRxTask(void*) {
             continue;
         }
         const uint32_t now = millis();
-        const auto     r =
-            rusefi::decodeFrame(msg.identifier, msg.data, msg.data_length_code, g_cfg.canBaseId);
+        const auto r = rusefi::decodeFrame(msg.identifier, msg.data, msg.data_length_code, g_cfg.canBaseId);
 
         if (!r.accepted) {
             if (msg.data_length_code < rusefi::kFrameDlc) {
@@ -72,7 +83,7 @@ void canRxTask(void*) {
 
         for (uint8_t i = 0; i < r.count; ++i) {
             const SignalId id = r.signals[i].id;
-            const float    v  = r.signals[i].value;
+            const float v     = r.signals[i].value;
 
             // SYS-42 / RSK-09: rusEFI が未構成センサに送る 0 をストアへ入れない。
             // 入れなければ鮮度が Fresh にならず、UI は自動的に "--" を出す。
@@ -99,29 +110,38 @@ void canHealthTask(void*) {
 // ---------------------------------------------------------------- 暫定 UI
 const char* freshnessLabel(Freshness f) {
     switch (f) {
-        case Freshness::Fresh: return "OK";
-        case Freshness::Stale: return "STALE";
-        default:               return "LOST";
+        case Freshness::Fresh:
+            return "OK";
+        case Freshness::Stale:
+            return "STALE";
+        default:
+            return "LOST";
     }
 }
 
 uint16_t zoneColor(LambdaZone z) {
     // DOC-23 §8 のパレット（P4 で Theme に移す）
     switch (z) {
-        case LambdaZone::RichHeavy: return M5Dial.Display.color565(0x2E, 0x7D, 0xFF);
-        case LambdaZone::Rich:      return M5Dial.Display.color565(0x00, 0xC8, 0xD7);
-        case LambdaZone::Optimal:   return M5Dial.Display.color565(0x17, 0xD1, 0x4B);
-        case LambdaZone::Lean:      return M5Dial.Display.color565(0xFF, 0xC4, 0x00);
-        default:                    return M5Dial.Display.color565(0xFF, 0x2D, 0x2D);
+        case LambdaZone::RichHeavy:
+            return M5Dial.Display.color565(0x2E, 0x7D, 0xFF);
+        case LambdaZone::Rich:
+            return M5Dial.Display.color565(0x00, 0xC8, 0xD7);
+        case LambdaZone::Optimal:
+            return M5Dial.Display.color565(0x17, 0xD1, 0x4B);
+        case LambdaZone::Lean:
+            return M5Dial.Display.color565(0xFF, 0xC4, 0x00);
+        default:
+            return M5Dial.Display.color565(0xFF, 0x2D, 0x2D);
     }
 }
 
 void drawBringupScreen(const Snapshot& snap) {
-    auto& d = M5Dial.Display;
-    d.startWrite();
+    // スプライトが確保できていればそこへ、駄目なら直接ディスプレイへ描く
+    LovyanGFX& d =
+        g_canvasReady ? static_cast<LovyanGFX&>(g_canvas) : static_cast<LovyanGFX&>(M5Dial.Display);
     d.fillScreen(TFT_BLACK);
 
-    float lambda = 0.0f;
+    float lambda         = 0.0f;
     const bool hasLambda = snap.get(SignalId::Lambda1, lambda);
     const auto zone      = zoneOf(lambda, g_cfg.zones);
 
@@ -148,7 +168,7 @@ void drawBringupScreen(const Snapshot& snap) {
     // 外周バーの簡易版（P4 で LambdaRing に置き換える / SWD-08）
     if (hasLambda) {
         const float ratio = ringRatio(lambda, g_cfg.ringLo, g_cfg.ringHi);
-        const int   sweep = static_cast<int>(ratio * 270.0f);
+        const int sweep   = static_cast<int>(ratio * 270.0f);
         d.fillArc(120, 120, 96, 118, 135, 135 + 270, d.color565(0x1A, 0x1A, 0x1A));
         if (sweep > 0) {
             d.fillArc(120, 120, 96, 118, 135, 135 + sweep, zoneColor(zone));
@@ -158,9 +178,9 @@ void drawBringupScreen(const Snapshot& snap) {
     float egtC = 0.0f;
     if (snap.get(SignalId::Egt1, egtC)) {
         const auto lv = levelOf(egtC, g_cfg.egt);
-        d.setTextColor(lv == EgtLevel::Danger   ? d.color565(0xFF, 0x2D, 0x2D)
-                       : lv == EgtLevel::Warn   ? d.color565(0xFF, 0xC4, 0x00)
-                                                : TFT_LIGHTGREY,
+        d.setTextColor(lv == EgtLevel::Danger ? d.color565(0xFF, 0x2D, 0x2D)
+                       : lv == EgtLevel::Warn ? d.color565(0xFF, 0xC4, 0x00)
+                                              : TFT_LIGHTGREY,
                        TFT_BLACK);
         snprintf(buf, sizeof(buf), "%dC", static_cast<int>(egtC + 0.5f));
     } else {
@@ -173,11 +193,14 @@ void drawBringupScreen(const Snapshot& snap) {
     // ブリングアップ用ステータス（P2 で OPN-02 を潰すための情報）
     d.setTextSize(1);
     d.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    snprintf(buf, sizeof(buf), "%lu f/s", static_cast<unsigned long>(g_can.stats().framesPerSec));
+    snprintf(buf, sizeof(buf), "%lu f/s  %lu fps", static_cast<unsigned long>(g_can.stats().framesPerSec),
+             static_cast<unsigned long>(g_frameUsTotal ? 1000000UL * g_frameCount / g_frameUsTotal : 0));
     d.drawString(buf, 120, 182);
     d.drawString(freshnessLabel(snap.freshnessOf(SignalId::Lambda1)), 120, 196);
 
-    d.endWrite();
+    if (g_canvasReady) {
+        g_canvas.pushSprite(0, 0);
+    }
 }
 
 }  // namespace
@@ -203,6 +226,13 @@ void setup() {
     }
 #endif
 
+    // 全画面スプライト 240x240x16bit = 112.5 KB。確保できなければ直接描画へフォールバックする。
+    g_canvas.setColorDepth(16);
+    g_canvas.setPsram(false);  // DOC-12 §7.1: PSRAM は無い
+    g_canvasReady = g_canvas.createSprite(240, 240);
+    Serial.printf("offscreen canvas: %s (free heap %u)\n", g_canvasReady ? "ok" : "FAILED",
+                  (unsigned)ESP.getFreeHeap());
+
     xTaskCreatePinnedToCore(canRxTask, "can_rx", 4096, nullptr, 10, nullptr, 0);
     xTaskCreatePinnedToCore(canHealthTask, "can_health", 3072, nullptr, 5, nullptr, 0);
 
@@ -217,8 +247,15 @@ void loop() {
     const uint32_t now = millis();
 
     if (static_cast<int32_t>(now - nextUiMs) >= 0) {
-        nextUiMs = now + kUiPeriodMs;
+        nextUiMs          = now + kUiPeriodMs;
+        const uint32_t t0 = micros();
         drawBringupScreen(g_store.snapshot(now));
+        g_frameUsTotal += micros() - t0;
+        g_frameCount++;
+        if (g_frameCount >= 64) {  // 直近 64 フレームの平均に落とす
+            g_frameUsTotal /= 2;
+            g_frameCount /= 2;
+        }
     }
 
     // SYS-31: ボタン短押しで AFR / λ 表示を切り替える
@@ -227,17 +264,21 @@ void loop() {
     }
 
     if (static_cast<int32_t>(now - nextLogMs) >= 0) {
-        nextLogMs        = now + 1000;
-        const auto& s    = g_can.stats();
-        const auto  snap = g_store.snapshot(now);
-        float       lam = 0.0f, egt = 0.0f;
-        const bool  hasLam = snap.get(SignalId::Lambda1, lam);
-        const bool  hasEgt = snap.get(SignalId::Egt1, egt);
-        Serial.printf("rx=%lu f/s=%lu unk=%lu dlc=%lu ovf=%lu tec=%lu rec=%lu | lam=%s%.3f egt=%s%.0f\n",
-                      (unsigned long)s.rxFrames, (unsigned long)s.framesPerSec,
-                      (unsigned long)s.unknownId, (unsigned long)s.badDlc,
-                      (unsigned long)s.queueOverflow, (unsigned long)s.tec, (unsigned long)s.rec,
-                      hasLam ? "" : "(none)", lam, hasEgt ? "" : "(none)", egt);
+        nextLogMs       = now + 1000;
+        const auto& s   = g_can.stats();
+        const auto snap = g_store.snapshot(now);
+        float lam = 0.0f, egt = 0.0f;
+        const bool hasLam      = snap.get(SignalId::Lambda1, lam);
+        const bool hasEgt      = snap.get(SignalId::Egt1, egt);
+        const uint32_t frameUs = g_frameCount ? g_frameUsTotal / g_frameCount : 0;
+        Serial.printf(
+            "rx=%lu f/s=%lu unk=%lu dlc=%lu ovf=%lu tec=%lu rec=%lu | lam=%s%.3f egt=%s%.0f | "
+            "draw=%luus (max %lu fps) heap=%u\n",
+            (unsigned long)s.rxFrames, (unsigned long)s.framesPerSec, (unsigned long)s.unknownId,
+            (unsigned long)s.badDlc, (unsigned long)s.queueOverflow, (unsigned long)s.tec,
+            (unsigned long)s.rec, hasLam ? "" : "(none)", lam, hasEgt ? "" : "(none)", egt,
+            (unsigned long)frameUs, (unsigned long)(frameUs ? 1000000UL / frameUs : 0),
+            (unsigned)ESP.getFreeHeap());
     }
 
     delay(2);

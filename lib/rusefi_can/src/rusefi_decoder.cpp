@@ -71,12 +71,24 @@ DecodeResult decodeFrame(uint32_t id, const uint8_t* data, uint8_t dlc, uint32_t
 
     const uint8_t off = static_cast<uint8_t>(id - baseId);
     switch (off) {
-        case kOffStatus:   decodeStatus(r, data);   break;
-        case kOffSpeeds:   decodeSpeeds(r, data);   break;
-        case kOffSensors1: decodeSensors1(r, data); break;
-        case kOffSensors2: decodeSensors2(r, data); break;
-        case kOffFueling3: decodeFueling3(r, data); break;
-        case kOffEgts:     decodeEgts(r, data);     break;
+        case kOffStatus:
+            decodeStatus(r, data);
+            break;
+        case kOffSpeeds:
+            decodeSpeeds(r, data);
+            break;
+        case kOffSensors1:
+            decodeSensors1(r, data);
+            break;
+        case kOffSensors2:
+            decodeSensors2(r, data);
+            break;
+        case kOffFueling3:
+            decodeFueling3(r, data);
+            break;
+        case kOffEgts:
+            decodeEgts(r, data);
+            break;
         default:
             // 範囲内だが本機が使わないフレーム（PedalTps / Fueling / Cams / Knock / Status11）。
             // 「受理したが取り出す信号はない」として accepted=true, count=0 を返す。

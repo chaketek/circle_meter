@@ -11,15 +11,15 @@ namespace cm::rusefi {
 
 struct DecodedSignal {
     SignalId id;
-    float    value;
+    float value;
 };
 
 /// 1 フレームから取り出せる信号の最大数（Sensors1 が 7 個で最大）。
 constexpr uint8_t kMaxSignalsPerFrame = 8;
 
 struct DecodeResult {
-    bool          accepted = false;  ///< このフレームを処理したか
-    uint8_t       count    = 0;      ///< signals に格納された有効要素数
+    bool accepted = false;  ///< このフレームを処理したか
+    uint8_t count = 0;      ///< signals に格納された有効要素数
     DecodedSignal signals[kMaxSignalsPerFrame]{};
 };
 

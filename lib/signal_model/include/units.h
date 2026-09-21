@@ -37,10 +37,14 @@ constexpr float fromQ4(LambdaQ4 v) {
 
 /// 固定小数点版のゾーン判定。これが唯一の実装であり、float 版は本関数に委譲する。
 constexpr LambdaZone zoneOfQ4(LambdaQ4 v, const LambdaZoneConfig& cfg) {
-    if (v <= toQ4(cfg.richHeavyMax)) return LambdaZone::RichHeavy;
-    if (v <= toQ4(cfg.richMax))      return LambdaZone::Rich;
-    if (v <= toQ4(cfg.optimalMax))   return LambdaZone::Optimal;
-    if (v <= toQ4(cfg.leanMax))      return LambdaZone::Lean;
+    if (v <= toQ4(cfg.richHeavyMax))
+        return LambdaZone::RichHeavy;
+    if (v <= toQ4(cfg.richMax))
+        return LambdaZone::Rich;
+    if (v <= toQ4(cfg.optimalMax))
+        return LambdaZone::Optimal;
+    if (v <= toQ4(cfg.leanMax))
+        return LambdaZone::Lean;
     return LambdaZone::LeanHeavy;
 }
 
@@ -58,8 +62,10 @@ struct EgtConfig {
 
 /// EGT の警告レベル。閾値「以上」で次のレベルに入る（UT-07: 849=Normal, 850=Warn）。
 constexpr EgtLevel levelOf(float egtC, const EgtConfig& cfg) {
-    if (egtC >= static_cast<float>(cfg.dangerC)) return EgtLevel::Danger;
-    if (egtC >= static_cast<float>(cfg.warnC))   return EgtLevel::Warn;
+    if (egtC >= static_cast<float>(cfg.dangerC))
+        return EgtLevel::Danger;
+    if (egtC >= static_cast<float>(cfg.warnC))
+        return EgtLevel::Warn;
     return EgtLevel::Normal;
 }
 
@@ -77,10 +83,13 @@ constexpr float afrToLambda(float afr, float stoich) {
 // ---------------------------------------------------------------- リング比率
 /// λ をリングの塗り比率 0.0-1.0 に変換する。範囲外はクランプする（DOC-23 §3.1）。
 constexpr float ringRatio(float lambda, float rangeLo, float rangeHi) {
-    if (rangeHi <= rangeLo) return 0.0f;
+    if (rangeHi <= rangeLo)
+        return 0.0f;
     const float r = (lambda - rangeLo) / (rangeHi - rangeLo);
-    if (r < 0.0f) return 0.0f;
-    if (r > 1.0f) return 1.0f;
+    if (r < 0.0f)
+        return 0.0f;
+    if (r > 1.0f)
+        return 1.0f;
     return r;
 }
 
@@ -89,9 +98,7 @@ constexpr float ringRatio(float lambda, float rangeLo, float rangeHi) {
 /// 入力が無効になったら必ず reset() すること（古い値から緩やかに追従する挙動を防ぐ）。
 class Lpf1 {
 public:
-    void configure(float timeConstantMs) {
-        m_tauMs = (timeConstantMs > 0.0f) ? timeConstantMs : 0.0f;
-    }
+    void configure(float timeConstantMs) { m_tauMs = (timeConstantMs > 0.0f) ? timeConstantMs : 0.0f; }
 
     void reset(float value) {
         m_value       = value;
@@ -108,7 +115,8 @@ public:
             return m_value;
         }
         if (dtMs == 0 || m_tauMs <= 0.0f) {
-            if (m_tauMs <= 0.0f) m_value = input;
+            if (m_tauMs <= 0.0f)
+                m_value = input;
             return m_value;
         }
         // alpha = dt / (tau + dt)  （オイラー近似。dt >> tau でも 1.0 を超えない）
@@ -119,9 +127,9 @@ public:
     }
 
 private:
-    float m_tauMs       = 0.0f;
-    float m_value       = 0.0f;
-    bool  m_initialized = false;
+    float m_tauMs      = 0.0f;
+    float m_value      = 0.0f;
+    bool m_initialized = false;
 };
 
 }  // namespace cm

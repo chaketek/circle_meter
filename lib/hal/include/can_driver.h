@@ -39,19 +39,19 @@ public:
     /// can_health タスクから 1 秒周期で呼ぶ。バスオフ検出と復旧、統計更新を行う。
     void poll(uint32_t nowMs);
 
-    CanState        state() const { return m_state; }
+    CanState state() const { return m_state; }
     const CanStats& stats() const { return m_stats; }
-    CanStats&       mutableStats() { return m_stats; }
+    CanStats& mutableStats() { return m_stats; }
 
 private:
     void applyFilter(const Config& cfg, twai_filter_config_t& f) const;
 
-    CanState m_state          = CanState::Stopped;
+    CanState m_state = CanState::Stopped;
     CanStats m_stats;
-    uint32_t m_lastFpsMs      = 0;
-    uint32_t m_lastFpsFrames  = 0;
-    uint32_t m_nextRetryMs    = 0;
-    uint8_t  m_failedRecovery = 0;
+    uint32_t m_lastFpsMs     = 0;
+    uint32_t m_lastFpsFrames = 0;
+    uint32_t m_nextRetryMs   = 0;
+    uint8_t m_failedRecovery = 0;
 };
 
 }  // namespace cm

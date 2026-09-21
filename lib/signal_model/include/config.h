@@ -16,27 +16,27 @@ struct Config {
     uint16_t version = kConfigVersion;
 
     // ---- 表示 ----
-    bool  showAfr = true;                 ///< true=AFR, false=λ (SYS-14)
-    float stoich  = kStoichGasoline;      ///< 5.0 - 20.0
-    float ringLo  = 0.68f;                ///< リング下端 λ (AFR 10.0 相当)
-    float ringHi  = 1.36f;                ///< リング上端 λ (AFR 20.0 相当)
+    bool showAfr = true;             ///< true=AFR, false=λ (SYS-14)
+    float stoich = kStoichGasoline;  ///< 5.0 - 20.0
+    float ringLo = 0.68f;            ///< リング下端 λ (AFR 10.0 相当)
+    float ringHi = 1.36f;            ///< リング上端 λ (AFR 20.0 相当)
 
     LambdaZoneConfig zones{0.75f, 0.85f, 1.03f, 1.10f};  ///< DOC-23 §3.2
-    EgtConfig        egt{850, 920};                       ///< DOC-23 §4
+    EgtConfig egt{850, 920};                             ///< DOC-23 §4
 
-    uint8_t brightness    = 4;     ///< 1-5 (DOC-23 §10)
-    bool    buzzerEnabled = true;  ///< EGT 危険時のブザー
-    uint8_t lastPage      = 0;     ///< SYS-35
+    uint8_t brightness = 4;     ///< 1-5 (DOC-23 §10)
+    bool buzzerEnabled = true;  ///< EGT 危険時のブザー
+    uint8_t lastPage   = 0;     ///< SYS-35
 
     // ---- CAN ----
-    uint16_t canBaseId       = 0x200;  ///< SYS-02
-    uint16_t canBitrateKbps  = 500;    ///< 250 / 500 / 1000
-    bool     canExtendedId   = false;  ///< rusefiVerbose29b
+    uint16_t canBaseId      = 0x200;  ///< SYS-02
+    uint16_t canBitrateKbps = 500;    ///< 250 / 500 / 1000
+    bool canExtendedId      = false;  ///< rusefiVerbose29b
 
     uint32_t crc32 = 0;  ///< 上記全フィールドのチェックサム（本フィールドは対象外）
 };
 
-Config   defaultConfig();
+Config defaultConfig();
 uint32_t computeCrc(const Config& c);
 
 /// 範囲・単調性・CRC を検証する。

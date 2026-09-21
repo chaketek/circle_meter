@@ -12,7 +12,7 @@ using namespace cm;
 
 namespace {
 const LambdaZoneConfig kZones{0.75f, 0.85f, 1.03f, 1.10f};
-const EgtConfig        kEgt{850, 920};
+const EgtConfig kEgt{850, 920};
 }  // namespace
 
 void setUp() {}
@@ -143,7 +143,7 @@ void test_UT08_snapshot_is_per_signal() {
     st.update(SignalId::Egt1, 800.0f, 2900);
 
     const Snapshot s = st.snapshot(3000);
-    float          v = 0.0f;
+    float v          = 0.0f;
     TEST_ASSERT_FALSE(s.get(SignalId::Lambda1, v));  // 2000ms 経過 -> Lost
     TEST_ASSERT_TRUE(s.get(SignalId::Egt1, v));      // 100ms -> Fresh
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 800.0f, v);
@@ -151,11 +151,11 @@ void test_UT08_snapshot_is_per_signal() {
 
 void test_UT08_status_bit_helper() {
     SignalStore st;
-    st.update(SignalId::StatusFlags,
-              static_cast<float>(status_bit::kCheckEngine | status_bit::kFuelPump), 1000);
+    st.update(SignalId::StatusFlags, static_cast<float>(status_bit::kCheckEngine | status_bit::kFuelPump),
+              1000);
 
-    const Snapshot s   = st.snapshot(1100);
-    bool           bit = false;
+    const Snapshot s = st.snapshot(1100);
+    bool bit         = false;
     TEST_ASSERT_TRUE(s.statusBit(status_bit::kCheckEngine, bit));
     TEST_ASSERT_TRUE(bit);
     TEST_ASSERT_TRUE(s.statusBit(status_bit::kLambdaProtect, bit));
@@ -226,19 +226,19 @@ void test_UT11_lpf_first_update_seeds_value() {
     TEST_ASSERT_TRUE(f.initialized());
 }
 
-
 // ---------------------------------------------------------------- UT-12
 // SWR-64: ボタンの短押し / 長押し / チャタリング除去
 namespace {
 /// ボタンを押し、hold ms 保持してから離す。その間 1ms 刻みで FSM を回し、
 /// 発生したイベントを返す（複数発生した場合は最初の 1 件）。
 ButtonEvent pressFor(ButtonFsm& b, uint32_t startMs, uint32_t holdMs, uint32_t tailMs = 200) {
-    ButtonEvent first = ButtonEvent::None;
+    ButtonEvent first  = ButtonEvent::None;
     const uint32_t end = startMs + holdMs + tailMs;
     for (uint32_t t = startMs; t <= end; ++t) {
-        const bool pressed = (t >= startMs) && (t < startMs + holdMs);
+        const bool pressed  = (t >= startMs) && (t < startMs + holdMs);
         const ButtonEvent e = b.update(pressed, t);
-        if (e != ButtonEvent::None && first == ButtonEvent::None) first = e;
+        if (e != ButtonEvent::None && first == ButtonEvent::None)
+            first = e;
     }
     return first;
 }
@@ -266,17 +266,19 @@ void test_UT12_between_short_and_long_yields_nothing() {
 void test_UT12_long_press_fires_once_before_release() {
     ButtonFsm b;
     ButtonEvent first = ButtonEvent::None;
-    int longCount = 0;
-    int shortCount = 0;
+    int longCount     = 0;
+    int shortCount    = 0;
     // 3 秒押しっぱなしにしてから離す
     for (uint32_t t = 0; t <= 3500; ++t) {
-        const bool pressed = (t >= 100) && (t < 3100);
+        const bool pressed  = (t >= 100) && (t < 3100);
         const ButtonEvent e = b.update(pressed, t);
         if (e == ButtonEvent::Long) {
             ++longCount;
-            if (first == ButtonEvent::None) first = e;
+            if (first == ButtonEvent::None)
+                first = e;
         }
-        if (e == ButtonEvent::Short) ++shortCount;
+        if (e == ButtonEvent::Short)
+            ++shortCount;
     }
     TEST_ASSERT_EQUAL(static_cast<int>(ButtonEvent::Long), static_cast<int>(first));
     TEST_ASSERT_EQUAL_INT(1, longCount);   // 1 回だけ
@@ -291,7 +293,7 @@ void test_UT13_default_config_is_valid() {
 }
 
 void test_UT13_crc_mismatch_detected() {
-    Config c = defaultConfig();
+    Config c     = defaultConfig();
     c.brightness = 2;  // CRC を更新せずに値だけ変える
     TEST_ASSERT_FALSE(validate(c));
     c.crc32 = computeCrc(c);
@@ -313,14 +315,14 @@ void test_UT13_monotonic_violation_rejected() {
     c.crc32 = computeCrc(c);
     TEST_ASSERT_FALSE(validate(c));
 
-    c              = defaultConfig();
-    c.ringHi       = 1.05f;  // leanMax(1.10) より小さい
-    c.crc32        = computeCrc(c);
+    c        = defaultConfig();
+    c.ringHi = 1.05f;  // leanMax(1.10) より小さい
+    c.crc32  = computeCrc(c);
     TEST_ASSERT_FALSE(validate(c));
 
-    c              = defaultConfig();
-    c.ringLo       = 0.80f;  // richHeavyMax(0.75) より大きい
-    c.crc32        = computeCrc(c);
+    c        = defaultConfig();
+    c.ringLo = 0.80f;  // richHeavyMax(0.75) より大きい
+    c.crc32  = computeCrc(c);
     TEST_ASSERT_FALSE(validate(c));
 }
 
@@ -341,9 +343,9 @@ void test_UT13_range_violations_rejected() {
     c.crc32      = computeCrc(c);
     TEST_ASSERT_FALSE(validate(c));
 
-    c               = defaultConfig();
-    c.egt.warnC     = 950;  // dangerC(920) 以上は不正
-    c.crc32         = computeCrc(c);
+    c           = defaultConfig();
+    c.egt.warnC = 950;  // dangerC(920) 以上は不正
+    c.crc32     = computeCrc(c);
     TEST_ASSERT_FALSE(validate(c));
 
     c                = defaultConfig();

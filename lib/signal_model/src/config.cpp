@@ -44,22 +44,33 @@ bool validateMonotonic(const Config& c) {
 }
 
 bool validate(const Config& c, bool checkCrc) {
-    if (c.version != kConfigVersion) return false;
+    if (c.version != kConfigVersion)
+        return false;
 
-    if (!inRange(c.stoich, 5.0f, 20.0f)) return false;
-    if (!inRange(c.ringLo, 0.30f, 2.0f)) return false;
-    if (!inRange(c.ringHi, 0.30f, 5.0f)) return false;
-    if (!validateMonotonic(c)) return false;
+    if (!inRange(c.stoich, 5.0f, 20.0f))
+        return false;
+    if (!inRange(c.ringLo, 0.30f, 2.0f))
+        return false;
+    if (!inRange(c.ringHi, 0.30f, 5.0f))
+        return false;
+    if (!validateMonotonic(c))
+        return false;
 
-    if (c.egt.warnC == 0 || c.egt.warnC >= c.egt.dangerC) return false;
-    if (c.egt.dangerC > 1275) return false;
+    if (c.egt.warnC == 0 || c.egt.warnC >= c.egt.dangerC)
+        return false;
+    if (c.egt.dangerC > 1275)
+        return false;
 
-    if (c.brightness < 1 || c.brightness > 5) return false;
+    if (c.brightness < 1 || c.brightness > 5)
+        return false;
 
-    if (c.canBaseId > 0x7FF - 11 && !c.canExtendedId) return false;
-    if (c.canBitrateKbps != 250 && c.canBitrateKbps != 500 && c.canBitrateKbps != 1000) return false;
+    if (c.canBaseId > 0x7FF - 11 && !c.canExtendedId)
+        return false;
+    if (c.canBitrateKbps != 250 && c.canBitrateKbps != 500 && c.canBitrateKbps != 1000)
+        return false;
 
-    if (checkCrc && c.crc32 != computeCrc(c)) return false;
+    if (checkCrc && c.crc32 != computeCrc(c))
+        return false;
 
     return true;
 }

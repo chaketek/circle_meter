@@ -10,9 +10,9 @@ namespace {
 constexpr char kTag[] = "can";
 
 /// バスオフ復旧の再試行間隔。5 回連続失敗したらバックオフする（SWD-05 §5.1）。
-constexpr uint32_t kRetryMs        = 1000;
-constexpr uint32_t kBackoffMs      = 10000;
-constexpr uint8_t  kBackoffAfter   = 5;
+constexpr uint32_t kRetryMs     = 1000;
+constexpr uint32_t kBackoffMs   = 10000;
+constexpr uint8_t kBackoffAfter = 5;
 
 twai_timing_config_t timingFor(uint16_t kbps) {
     switch (kbps) {
@@ -81,7 +81,8 @@ bool CanDriver::begin(const Config& cfg) {
 }
 
 bool CanDriver::receive(twai_message_t& out, uint32_t timeoutMs) {
-    if (m_state != CanState::Running) return false;
+    if (m_state != CanState::Running)
+        return false;
     return twai_receive(&out, pdMS_TO_TICKS(timeoutMs)) == ESP_OK;
 }
 
@@ -129,10 +130,10 @@ void CanDriver::poll(uint32_t nowMs) {
                     m_state          = CanState::Running;
                     ESP_LOGI(kTag, "bus recovered (%u)", m_stats.recoveryCount);
                 } else {
-                    if (m_failedRecovery < 255) m_failedRecovery++;
-                    m_state = CanState::BusOff;
-                    m_nextRetryMs =
-                        nowMs + (m_failedRecovery >= kBackoffAfter ? kBackoffMs : kRetryMs);
+                    if (m_failedRecovery < 255)
+                        m_failedRecovery++;
+                    m_state       = CanState::BusOff;
+                    m_nextRetryMs = nowMs + (m_failedRecovery >= kBackoffAfter ? kBackoffMs : kRetryMs);
                 }
             }
             break;

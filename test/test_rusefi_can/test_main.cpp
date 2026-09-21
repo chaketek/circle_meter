@@ -24,7 +24,8 @@ bool find(const DecodeResult& r, SignalId id, float& out) {
 }
 
 void zero(uint8_t* d) {
-    for (int i = 0; i < 8; ++i) d[i] = 0;
+    for (int i = 0; i < 8; ++i)
+        d[i] = 0;
 }
 
 }  // namespace
@@ -77,7 +78,7 @@ void test_UT01_extended_id_uses_same_arithmetic() {
     d[0] = 0xA9;  // EGT1 = 845 degC
 
     const uint32_t extBase = 0x1FFFF000;
-    DecodeResult   r       = decodeFrame(extBase + kOffEgts, d, 8, extBase);
+    DecodeResult r         = decodeFrame(extBase + kOffEgts, d, 8, extBase);
     TEST_ASSERT_TRUE(r.accepted);
     float egt = 0.0f;
     TEST_ASSERT_TRUE(find(r, SignalId::Egt1, egt));
@@ -91,8 +92,8 @@ void test_UT02_lambda_decode() {
     zero(d);
 
     // raw 10000 (0x2710) -> λ 1.0000
-    d[0] = 0x10;
-    d[1] = 0x27;
+    d[0]      = 0x10;
+    d[1]      = 0x27;
     float lam = 0.0f;
     TEST_ASSERT_TRUE(find(decodeFrame(0x207, d, 8, kBase), SignalId::Lambda1, lam));
     TEST_ASSERT_FLOAT_WITHIN(1e-5f, 1.0000f, lam);
@@ -108,8 +109,8 @@ void test_UT02_lambda_is_little_endian() {
     // バイト順を取り違えていれば必ず落ちるケース
     uint8_t d[8];
     zero(d);
-    d[0] = 0x00;
-    d[1] = 0x27;  // LE: 0x2700 = 9984 -> 0.9984  /  BE なら 0x0027 = 39 -> 0.0039
+    d[0]      = 0x00;
+    d[1]      = 0x27;  // LE: 0x2700 = 9984 -> 0.9984  /  BE なら 0x0027 = 39 -> 0.0039
     float lam = 0.0f;
     TEST_ASSERT_TRUE(find(decodeFrame(0x207, d, 8, kBase), SignalId::Lambda1, lam));
     TEST_ASSERT_FLOAT_WITHIN(1e-4f, 0.9984f, lam);
@@ -131,9 +132,9 @@ void test_UT03_egt_decode() {
     uint8_t d[8];
     zero(d);
 
-    d[0]      = 0xA9;  // 169 * 5 = 845
-    d[1]      = 0x64;  // 100 * 5 = 500
-    float egt = 0.0f;
+    d[0]           = 0xA9;  // 169 * 5 = 845
+    d[1]           = 0x64;  // 100 * 5 = 500
+    float egt      = 0.0f;
     DecodeResult r = decodeFrame(0x209, d, 8, kBase);
     TEST_ASSERT_TRUE(find(r, SignalId::Egt1, egt));
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 845.0f, egt);
@@ -166,7 +167,7 @@ void test_UT04_speeds_frame() {
     d[6] = 0x3C;  // vss = 60 km/h
 
     DecodeResult r = decodeFrame(0x201, d, 8, kBase);
-    float        v = 0.0f;
+    float v        = 0.0f;
     TEST_ASSERT_TRUE(find(r, SignalId::Rpm, v));
     TEST_ASSERT_FLOAT_WITHIN(0.5f, 3000.0f, v);
     TEST_ASSERT_TRUE(find(r, SignalId::IgnitionTiming, v));
@@ -181,8 +182,8 @@ void test_UT04_ignition_timing_is_signed() {
     uint8_t d[8];
     zero(d);
     // -500 * 0.02 = -10.0 deg  (0xFE0C)
-    d[2] = 0x0C;
-    d[3] = 0xFE;
+    d[2]    = 0x0C;
+    d[3]    = 0xFE;
     float v = 0.0f;
     TEST_ASSERT_TRUE(find(decodeFrame(0x201, d, 8, kBase), SignalId::IgnitionTiming, v));
     TEST_ASSERT_FLOAT_WITHIN(1e-3f, -10.0f, v);
@@ -198,7 +199,7 @@ void test_UT04_sensors1_temperature_offset() {
     d[7] = 120;   // FuelLevel = 120 * 0.5 = 60 %
 
     DecodeResult r = decodeFrame(0x203, d, 8, kBase);
-    float        v = 0.0f;
+    float v        = 0.0f;
     TEST_ASSERT_TRUE(find(r, SignalId::Map, v));
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 100.0f, v);
     TEST_ASSERT_TRUE(find(r, SignalId::Clt, v));
@@ -228,7 +229,7 @@ void test_UT04_sensors2_battery_and_padding() {
     d[7] = 0x35;  // BattVolt = 13800 mV = 13.8 V
 
     DecodeResult r = decodeFrame(0x204, d, 8, kBase);
-    float        v = 0.0f;
+    float v        = 0.0f;
     TEST_ASSERT_TRUE(find(r, SignalId::OilPressure, v));
     TEST_ASSERT_FLOAT_WITHIN(0.01f, 100.0f, v);
     TEST_ASSERT_TRUE(find(r, SignalId::OilTemp, v));
@@ -244,7 +245,7 @@ void test_UT04_status_flag_bit_positions() {
     d[5] = 3;  // gear
 
     DecodeResult r = decodeFrame(0x200, d, 8, kBase);
-    float        v = 0.0f;
+    float v        = 0.0f;
     TEST_ASSERT_TRUE(find(r, SignalId::StatusFlags, v));
     const uint32_t flags = static_cast<uint32_t>(v);
     TEST_ASSERT_TRUE((flags & status_bit::kCheckEngine) != 0);

@@ -43,14 +43,14 @@ constexpr size_t idx(SignalId id) {
 
 /// `StatusFlags` に詰め込まれるビット位置（DOC-13 §3.6）。
 namespace status_bit {
-constexpr uint32_t kRevLimit        = 1u << 0;
-constexpr uint32_t kMainRelay       = 1u << 1;
-constexpr uint32_t kFuelPump        = 1u << 2;
-constexpr uint32_t kCheckEngine     = 1u << 3;
-constexpr uint32_t kO2Heater        = 1u << 4;
-constexpr uint32_t kLambdaProtect   = 1u << 5;
-constexpr uint32_t kFan1            = 1u << 6;
-constexpr uint32_t kFan2            = 1u << 7;
+constexpr uint32_t kRevLimit      = 1u << 0;
+constexpr uint32_t kMainRelay     = 1u << 1;
+constexpr uint32_t kFuelPump      = 1u << 2;
+constexpr uint32_t kCheckEngine   = 1u << 3;
+constexpr uint32_t kO2Heater      = 1u << 4;
+constexpr uint32_t kLambdaProtect = 1u << 5;
+constexpr uint32_t kFan1          = 1u << 6;
+constexpr uint32_t kFan2          = 1u << 7;
 }  // namespace status_bit
 
 }  // namespace cm

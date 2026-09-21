@@ -21,9 +21,9 @@ constexpr uint32_t kStaleAfterMs = 500;
 constexpr uint32_t kLostAfterMs  = 2000;
 
 struct SignalValue {
-    float    value        = 0.0f;
+    float value           = 0.0f;
     uint32_t lastUpdateMs = 0;
-    bool     everReceived = false;
+    bool everReceived     = false;
 };
 
 /// ある瞬間の全信号の一貫したコピー。UI はこれを 1 フレームに 1 回取得する。
@@ -33,17 +33,21 @@ public:
 
     Freshness freshnessOf(SignalId id) const {
         const SignalValue& v = m_s[idx(id)];
-        if (!v.everReceived) return Freshness::Lost;
+        if (!v.everReceived)
+            return Freshness::Lost;
         // 32bit ラップアラウンド対応: 符号なし減算で差分を取る（UT-14）
         const uint32_t age = takenAtMs - v.lastUpdateMs;
-        if (age < kStaleAfterMs) return Freshness::Fresh;
-        if (age < kLostAfterMs) return Freshness::Stale;
+        if (age < kStaleAfterMs)
+            return Freshness::Fresh;
+        if (age < kLostAfterMs)
+            return Freshness::Stale;
         return Freshness::Lost;
     }
 
     /// Lost のときは false を返し、out を変更しない（RSK-01 / SWR-22）。
     bool get(SignalId id, float& out) const {
-        if (freshnessOf(id) == Freshness::Lost) return false;
+        if (freshnessOf(id) == Freshness::Lost)
+            return false;
         out = m_s[idx(id)].value;
         return true;
     }
@@ -51,7 +55,8 @@ public:
     /// 状態フラグ（DOC-13 §3.6）。Lost のときは false。
     bool statusBit(uint32_t mask, bool& out) const {
         float f = 0.0f;
-        if (!get(SignalId::StatusFlags, f)) return false;
+        if (!get(SignalId::StatusFlags, f))
+            return false;
         out = (static_cast<uint32_t>(f) & mask) != 0;
         return true;
     }
@@ -70,10 +75,10 @@ public:
         m_seq.fetch_add(1, std::memory_order_acquire);  // 奇数にする
         std::atomic_thread_fence(std::memory_order_release);
 
-        SignalValue& s  = m_s[idx(id)];
-        s.value         = v;
-        s.lastUpdateMs  = nowMs;
-        s.everReceived  = true;
+        SignalValue& s = m_s[idx(id)];
+        s.value        = v;
+        s.lastUpdateMs = nowMs;
+        s.everReceived = true;
 
         std::atomic_thread_fence(std::memory_order_release);
         m_seq.fetch_add(1, std::memory_order_release);  // 偶数に戻す
@@ -88,14 +93,16 @@ public:
         // 上限を設けて無限ループを防ぐ（最後の試行の内容をそのまま使う）。
         for (int attempt = 0; attempt < kMaxRetry; ++attempt) {
             const uint32_t s0 = m_seq.load(std::memory_order_acquire);
-            if (s0 & 1u) continue;  // 書き込み中
+            if (s0 & 1u)
+                continue;  // 書き込み中
 
             for (size_t i = 0; i < kSignalCount; ++i) {
                 out.m_s[i] = m_s[i];
             }
 
             std::atomic_thread_fence(std::memory_order_acquire);
-            if (m_seq.load(std::memory_order_relaxed) == s0) break;
+            if (m_seq.load(std::memory_order_relaxed) == s0)
+                break;
         }
         return out;
     }
@@ -104,7 +111,7 @@ private:
     static constexpr int kMaxRetry = 8;
 
     mutable std::atomic<uint32_t> m_seq{0};
-    SignalValue                   m_s[kSignalCount];
+    SignalValue m_s[kSignalCount];
 };
 
 }  // namespace cm
