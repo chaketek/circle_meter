@@ -179,7 +179,7 @@ flowchart LR
 | ジョブ | 実行環境 | 内容 | 失敗時 |
 |---|---|---|---|
 | `lint` | ubuntu-latest | `clang-format --dry-run -Werror` | マージ不可 |
-| `guard` | ubuntu-latest | `twai_transmit` の混入検査（`RSK-06`）、`TWAI_MODE_NO_ACK` の検査（`RSK-10`）、ドメイン層の HW 依存検査（`DEC-06`） | マージ不可 |
+| `guard` | ubuntu-latest | `bash tools/guard.sh`（`twai_transmit` の混入 `RSK-06`、`TWAI_MODE_NO_ACK` `RSK-10`、ドメイン層の HW 依存 `DEC-06`、スケーリング定数の直書き `SWD-01`） | マージ不可 |
 | `test` | ubuntu-latest | `pio test -e native` | マージ不可 |
 | `build` | ubuntu-latest | `pio run -e m5dial -e m5dial_sim` + Flash/RAM 使用量をジョブサマリに出力 | マージ不可 |
 | `release` | ubuntu-latest | タグ push 時のみ。`firmware.bin` `firmware.elf` を Release に添付 | — |
@@ -193,6 +193,7 @@ GitHub Actions のランナーは M5Dial に物理接続できない。
 |---|---|
 | `tools/build.ps1` | `pio run -e m5dial` |
 | `tools/test.ps1` | `pio test -e native` |
+| `bash tools/guard.sh` | CI の `guard` ジョブと同じ静的チェックをローカルで実行 |
 | `tools/flash.ps1 [-Port COM5] [-Sim]` | ビルド + 書き込み。`-Sim` で CAN シミュレータ版 |
 | `tools/monitor.ps1 [-Port COM5]` | シリアルモニタ（115200 bps） |
 | `tools/flash_and_monitor.ps1` | 書き込み後そのままモニタ |
