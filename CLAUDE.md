@@ -1,6 +1,9 @@
 # circle_meter — Claude Code 向けプロジェクト指示
 
-rusEFI と CAN 接続する車載メータ（M5Stack Dial v1.1 / ESP32-S3）のファームウェア。
+rusEFI と CAN 接続する車載メータ（**Waveshare ESP32-S3-Touch-AMOLED-1.75** / ESP32-S3R8 / 466×466 AMOLED）のファームウェア。
+
+> **2026-09-28: 対象ハードを M5Stack Dial v1.1 から変更した。** 文書は改訂済み、**コードはまだ M5Dial 向け**。
+> 移行の経緯と影響は `docs/12_SYS3_system_arch.md` §8 を読むこと。
 ASPICE をテーラリングした文書体系で管理している。**文書が仕様であり、コードは文書に従う。**
 
 ## 最初に読むもの
@@ -12,8 +15,9 @@ ASPICE をテーラリングした文書体系で管理している。**文書�
 
 ## 絶対に守ること
 
-1. **CAN バスへ送信しない。** `twai_transmit()` を書かない。TWAI は `TWAI_MODE_LISTEN_ONLY`
-   以外で初期化しない。CI の `guard` ジョブが混入を検出する（`RSK-06` / `SYS-07`）。
+1. **CAN バスへフレームを送出しない。** `twai_transmit()` を書かない。TWAI は `TWAI_MODE_NORMAL`
+   で初期化し ACK は返す（`RSK-10`）。`TWAI_MODE_NO_ACK` は禁止。
+   CI の `guard` ジョブが混入を検出する（`RSK-06` / `SYS-07` / `DEC-04`）。
 2. **信号喪失時に古い値を返さない。** `Snapshot::get()` は `Lost` のとき `false` を返し
    出力を変更しない。この契約を壊す API（値と鮮度を別々に返すもの）を追加しない（`RSK-01`）。
 3. **ドメイン層を HW に依存させない。** `lib/rusefi_can/` と `lib/signal_model/` に
@@ -77,8 +81,9 @@ C++17 / `.clang-format`（Google ベース・インデント 4・列幅 110）/ 
 
 `docs/11_SYS2_system_req.md` §4 の `OPN-*` を参照。特に以下は実装を進める前に実測で確定する。
 
-- `OPN-01` 所有している CAN Unit の型番と終端抵抗の有無
-- `OPN-02` M5Dial PORT.B の GPIO 割当（G1/G2）と Grove 線色の対応、TX/RX の向き
+- `OPN-08` **8Pin ヘッダに出ている GPIO 3 本の番号**。CAN の TX/RX をここから取る
+- `OPN-12` **466×466 での実描画性能**。`SYS-12`（30 fps）を満たせるか。満たせないと `DOC-23` から作り直し
+- `OPN-01` Mini CAN Unit の終端抵抗の有無
 - `OPN-03` rusEFI 側で `Lambda1` / `EGT1` が構成済みか、`canSleepPeriodMs` の実設定値
 
 これらが未確定のまま「たぶんこうだろう」で実装を進めない。
