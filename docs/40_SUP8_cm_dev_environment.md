@@ -77,10 +77,10 @@ pio test -e native         # ドメイン層の単体テスト（PC 上で実行
 | 項目 | 値 |
 |---|---|
 | ボード | **Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B**（ESP32-S3R8） |
-| PlatformIO board | **未確定**（`OPN-15`）。現行の `espressif32@6.9.0`（IDF 4.4）では RGB パネルの bounce buffer が使えない見込みで、プラットフォームの更新が要る |
+| PlatformIO board | `boards/waveshare_lcd21.json`（自作）。**プラットフォームは pioarduino 55.03.312-1（Arduino-ESP32 3.3.12 / IDF 5.5.5）で動作確認済み**（`env:lcd21_bringup`、`OPN-15` は TWAI 確認とサプライチェーン確認が残り）。**Git Bash では `idf_tools.py` が失敗するので PowerShell から実行する**。初回に `~/.platformio/penv` が再作成される |
 | framework | `arduino` |
 | Flash | **16 MB**, QIO, 80 MHz |
-| PSRAM | **8 MB Octal**（実機の esptool 応答で確認済み）。`memory_type = opi_opi` 相当 |
+| PSRAM | **8 MB Octal**（実機の esptool 応答で確認済み）。`memory_type = qio_opi`（Flash は Quad、PSRAM は Octal） |
 | パーティション | **新規作成が必要**（16 MB 用） |
 | CPU | 240 MHz |
 | 書き込み・ログ | **CH343P の UART Type-C**（実機で `COM10` として認識。自動書き込み回路あり）。**ネイティブ USB-C にはケーブルを挿さない**（12PIN の D−/D+ を CAN に使うため競合する: `RSK-13`） |
@@ -264,7 +264,7 @@ GitHub Issues で一元管理する。文書は作らず、ラベルで区別す
 | **P0. 文書化** | `DOC-00` – `DOC-50` 作成 | 本文書一式のレビュー完了 | ✅ 完了 (2026-09-21) |
 | **P1. 骨格** | リポジトリ構成、`platformio.ini`、CI、ドメイン層、単体テスト、ブリングアップ FW | `pio test -e native` (45 件) と `pio run -e m5dial` が green、実機で起動確認 | ✅ 完了 (2026-09-21) |
 | **P2. ブリングアップ（M5Dial）** | `OPN-01` – `OPN-03` の実測解決。CAN 受信が動くこと | ベンチで `0x207` / `0x209` を受信し、シリアルに値が出る | ✅ 完了 (2026-09-21)。`IT-01/02/03/04/15` 合格 |
-| **P2.5 ボード移行** | 対象ハードを Waveshare ESP32-S3-Touch-LCD-2.1 へ変更（`DOC-12 §8`） | ① 文書改訂 ② `OPN-15`（プラットフォーム・表示ライブラリ）決定 ③ `OPN-12`（480×480 RGB の実描画性能）実測 ④ `OPN-13`（CAN を GPIO19/20 に割り当てて PCAN と通信）確認 ⑤ `OPN-14`（`VBus` 給電・消費電流）確認 | ⏳ 実施中（① 完了、②〜⑤ 未着手） |
+| **P2.5 ボード移行** | 対象ハードを Waveshare ESP32-S3-Touch-LCD-2.1 へ変更（`DOC-12 §8`） | ① 文書改訂 ② `OPN-15`（プラットフォーム・表示ライブラリ）決定 ③ `OPN-12`（480×480 RGB の実描画性能）実測 ④ `OPN-13`（CAN を GPIO19/20 に割り当てて PCAN と通信）確認 ⑤ `OPN-14`（`VBus` 給電・消費電流）確認 | ⏳ 実施中（① 完了、② 一部（pioarduino で動作確認）、③ 一部（素の描画で実測。LVGL は未）、④⑤ 未着手） |
 | **P3. ドメイン実装** | デコーダ・信号ストア・単位換算の完成 + `UT-*` 全件 | `UT-01` – `UT-13` 全て pass | 未着手 |
 | **P4. HMI 実装** | λ リング・数値・EGT・ページ管理・スプラッシュ | `QT-02` / `QT-03` 合格 | 未着手 |
 | **P5. 設定・診断** | 設定メニュー・NVS・診断ページ | `IT-05` / `IT-13` 合格 | 未着手 |
