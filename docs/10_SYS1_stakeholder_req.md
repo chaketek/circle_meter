@@ -52,8 +52,8 @@
 
 | ID | 制約 | 根拠 |
 |---|---|---|
-| `CST-01` | ハードウェアは **Waveshare ESP32-S3-Touch-AMOLED-1.75**（ESP32-S3R8 / 8MB Octal PSRAM / 16MB Flash / 1.75" 466×466 AMOLED / 静電容量タッチ）を使用する | 2026-09-28 に M5Stack Dial v1.1 から変更。外部 IO の本数が決め手。経緯は `DOC-12 §8` |
-| `CST-02` | CAN 接続は **M5Stack Unit Mini CAN（TJA1051T/3）**を使用する。本ユニットは **12V→5V 変換も兼ねる**（端子台 9–24V 入力 / Grove 5V 出力 最大 700 mA） | 調達済み。電源とトランシーバを 1 ユニットで賄う |
+| `CST-01` | ハードウェアは **Waveshare ESP32-S3-Touch-LCD-2.1**（平面タッチ）/ **2.1B**（2.5D 曲面タッチ。電子部品は同一）を使用する。ESP32-S3R8 / 8MB Octal PSRAM / 16MB Flash / 2.1" 丸型 480×480（ST7701S, RGB 並列）/ 静電容量タッチ | 2026-10-01 に M5Stack Dial v1.1 から変更（オーナー判断）。PSRAM と Flash は実機で確認済み。経緯は `DOC-12 §8` |
+| `CST-02` | CAN 接続は **M5Stack Unit Mini CAN（TJA1051T/3）**を使用する。本ユニットは **12V→5V 変換も兼ねる**（端子台 9–24V 入力 / Grove 5V 出力 最大 700 mA）。5V は本体の **12PIN `VBus`** へ入れる | 調達済み。電源とトランシーバを 1 ユニットで賄う。`VBus` への給電が成立するかは `OPN-14` |
 | `CST-03` | ECU は **rusEFI**。CAN は rusEFI の verbose broadcast を用いる | 車両既設 |
 | `CST-04` | 表示器は制御に介入しない（受信専用） | STK-13 / 安全方針 |
 | `CST-05` | 動作電源は車両の 12V 系（クランキング時 6V 程度まで降下しうる）。本体は **5V 単一電源**で動作し、12V→5V 変換は `CST-02` の CAN Unit が行う | 車両仕様 |

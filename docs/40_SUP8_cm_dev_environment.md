@@ -76,29 +76,44 @@ pio test -e native         # ドメイン層の単体テスト（PC 上で実行
 
 | 項目 | 値 |
 |---|---|
-| ボード | **Waveshare ESP32-S3-Touch-AMOLED-1.75**（ESP32-S3R8） |
-| PlatformIO board | 要確定（`esp32-s3-devkitc-1` 系 + カスタム設定を想定） |
+| ボード | **Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B**（ESP32-S3R8） |
+| PlatformIO board | **未確定**（`OPN-15`）。現行の `espressif32@6.9.0`（IDF 4.4）では RGB パネルの bounce buffer が使えない見込みで、プラットフォームの更新が要る |
 | framework | `arduino` |
 | Flash | **16 MB**, QIO, 80 MHz |
-| PSRAM | **8 MB Octal**。`memory_type = opi_opi` 相当（要確認） |
+| PSRAM | **8 MB Octal**（実機の esptool 応答で確認済み）。`memory_type = opi_opi` 相当 |
 | パーティション | **新規作成が必要**（16 MB 用） |
 | CPU | 240 MHz |
-| USB | ESP32-S3 ネイティブ USB-CDC（USB-C 直結） |
+| 書き込み・ログ | **CH343P の UART Type-C**（実機で `COM10` として認識。自動書き込み回路あり）。**ネイティブ USB-C にはケーブルを挿さない**（12PIN の D−/D+ を CAN に使うため競合する: `RSK-13`） |
 
 ### 2.4 書き込み手順
 
-M5Dial は ESP32-S3 のネイティブ USB を使用するため、通常は専用ドライバ不要で
-`USB シリアルデバイス (COMx)` として認識される。
+本ボードは **CH343P の UART Type-C** から自動リセットで書き込める
+（実機で esptool が接続し、チップ情報を取得できることを確認した）。
 
 ```bash
-pio run -e m5dial -t upload
+python -m platformio device list
 ```
 
-ポートが自動検出されない場合、または書き込みモードに入らない場合:
+`USB-Enhanced-SERIAL CH343` として見えるポートが対象。ポートを明示して書き込む。
 
-1. `pio device list` でポートを確認する。
-2. M5Dial の**リセットボタンを押しながら USB を接続**してダウンロードモードに入る。
-3. `pio run -e m5dial -t upload --upload-port COM5` のようにポートを明示する。
+> **PlatformIO の esptool をシステムの Python から直接呼ぶと失敗する**（`click` のバージョン不整合）。
+> `C:\Users\<ユーザー>\.platformio\penv\Scripts\python.exe` から呼ぶこと。`pio run -t upload` は問題ない。
+
+書き込みモードに入らない場合は **BOOT ボタンを押しながら RESET** を押す。
+
+**ネイティブ USB-C にはケーブルを挿さない。** 12PIN の D−/D+（GPIO19/20）を CAN に使うため、
+挿すと CAN のトランシーバと信号が競合する（`RSK-13`）。
+
+### 2.4.1 表示の目視確認（UVC カメラ）
+
+LCD を UVC カメラで撮影し、表示を目で確認できる構成にしてある。
+画像はファイルとして取得できるので、Claude Code から直接見て確認できる。
+
+```bash
+ffmpeg -f dshow -video_size 1280x720 -i video="5MP USB Camera" -frames:v 1 -update 1 out.jpg
+```
+
+> PC 内蔵カメラ（`Integrated Camera`）は使わない。LCD の確認には外付けのカメラのみを使う。
 
 ### 2.5 車両に接続せずに開発する方法（`SYS-61` / `SWR-100`）
 
@@ -249,7 +264,7 @@ GitHub Issues で一元管理する。文書は作らず、ラベルで区別す
 | **P0. 文書化** | `DOC-00` – `DOC-50` 作成 | 本文書一式のレビュー完了 | ✅ 完了 (2026-09-21) |
 | **P1. 骨格** | リポジトリ構成、`platformio.ini`、CI、ドメイン層、単体テスト、ブリングアップ FW | `pio test -e native` (45 件) と `pio run -e m5dial` が green、実機で起動確認 | ✅ 完了 (2026-09-21) |
 | **P2. ブリングアップ（M5Dial）** | `OPN-01` – `OPN-03` の実測解決。CAN 受信が動くこと | ベンチで `0x207` / `0x209` を受信し、シリアルに値が出る | ✅ 完了 (2026-09-21)。`IT-01/02/03/04/15` 合格 |
-| **P2.5 ボード移行** | 対象ハードを Waveshare ESP32-S3-Touch-AMOLED-1.75 へ変更（`DOC-12 §8`） | ① 文書改訂 ② `OPN-08`（8Pin ヘッダの GPIO）確定 ③ `OPN-12`（466×466 の実描画性能）実測 ④ CAN 受信の再確認 | ⏳ 実施中（① 完了、②③④ 未着手） |
+| **P2.5 ボード移行** | 対象ハードを Waveshare ESP32-S3-Touch-LCD-2.1 へ変更（`DOC-12 §8`） | ① 文書改訂 ② `OPN-15`（プラットフォーム・表示ライブラリ）決定 ③ `OPN-12`（480×480 RGB の実描画性能）実測 ④ `OPN-13`（CAN を GPIO19/20 に割り当てて PCAN と通信）確認 ⑤ `OPN-14`（`VBus` 給電・消費電流）確認 | ⏳ 実施中（① 完了、②〜⑤ 未着手） |
 | **P3. ドメイン実装** | デコーダ・信号ストア・単位換算の完成 + `UT-*` 全件 | `UT-01` – `UT-13` 全て pass | 未着手 |
 | **P4. HMI 実装** | λ リング・数値・EGT・ページ管理・スプラッシュ | `QT-02` / `QT-03` 合格 | 未着手 |
 | **P5. 設定・診断** | 設定メニュー・NVS・診断ページ | `IT-05` / `IT-13` 合格 | 未着手 |
