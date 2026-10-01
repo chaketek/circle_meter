@@ -2,7 +2,9 @@
 
 rusEFI と CAN 接続する車載メータ（**Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B** / ESP32-S3R8 / 480×480 丸型 RGB 並列）のファームウェア。
 
-> **2026-10-01: 対象ハードを M5Stack Dial v1.1 から変更した。** 文書は改訂済み、**コードはまだ M5Dial 向け**。
+> **2026-10-01: 対象ハードを M5Stack Dial v1.1 から変更した。** 文書は改訂済み。**コードは移行中**:
+> LCD-2.1 向けの本番コード（`src/main_lcd21.cpp`、`lib/ui/`、`lib/hal/display_hal*`）を実装済みで、
+> M5Dial 向けの `src/main.cpp` は廃止予定のまま残してある（触らない）。
 > 移行の経緯と影響は `docs/12_SYS3_system_arch.md` §8 を読むこと。
 ASPICE をテーラリングした文書体系で管理している。**文書が仕様であり、コードは文書に従う。**
 
@@ -51,6 +53,22 @@ pio run -e m5dial
 pio run -e m5dial -t upload
 ```
 
+**LCD-2.1 版は PowerShell から実行する**（pioarduino は Git Bash では `idf_tools.py` が失敗する）。
+画面だけを動かすスイープデモ（CAN 不要）:
+
+```powershell
+python -m platformio run -e lcd21_sim -t upload --upload-port COM10
+```
+
+実 CAN 版（物理層を繋いでから。`OPN-13` は実機未確認）:
+
+```powershell
+python -m platformio run -e lcd21 -t upload --upload-port COM10
+```
+
+デモは UART0（115200）から 1 文字送って操作できる: `h` 停止/再開、`0`-`9` その位置で停止、`m` AFR/λ 切替。
+1 秒ごとにシリアルへ fps・1 フレームの描画/flush 時間・画素数が出る。`m5dial` / `m5dial_sim` は M5Dial 用なので、LCD-2.1 には書き込まない。
+
 PowerShell からは `tools/test.ps1` / `tools/build.ps1` / `tools/flash.ps1` /
 `tools/monitor.ps1` / `tools/flash_and_monitor.ps1`。
 `pio` が PATH に無い場合は `python -m platformio` を使う。
@@ -65,9 +83,9 @@ PowerShell からは `tools/test.ps1` / `tools/build.ps1` / `tools/flash.ps1` /
 | ディレクトリ | 内容 | 制約 |
 |---|---|---|
 | `lib/rusefi_can/` | CAN フレームのデコード（純粋関数） | HW 非依存・状態を持たない |
-| `lib/signal_model/` | 信号ストア・単位換算・設定・ボタン FSM | HW 非依存 |
-| `lib/hal/` | TWAI・入力・表示・NVS・診断 | ESP32 依存 |
-| `lib/ui/` | LVGL ポート・ページ・ウィジェット・テーマ | LVGL 依存（P4 で実装） |
+| `lib/signal_model/` | 信号ストア・単位換算・設定・ボタン FSM・リング幾何・スイープ生成・表示ポリシー | HW 非依存 |
+| `lib/hal/` | TWAI・CAN 受信タスク・表示/タッチ（`display_hal`）・入力・NVS・診断 | ESP32 依存。`display_hal_lcd21.cpp` は `CM_BOARD_LCD21` のときだけ有効 |
+| `lib/ui/` | LVGL ポート・ページ・ウィジェット（`LambdaRing` / `BigNumber`）・テーマ | LVGL 依存。**表示を変えるときは差分無効化を保つ**（`DEC-08`。全面再描画は 78 ms） |
 | `src/main.cpp` | 起動シーケンスとタスク生成 | |
 | `test/` | native 単体テスト | |
 
@@ -84,8 +102,9 @@ C++17 / `.clang-format`（Google ベース・インデント 4・列幅 110）/ 
 
 `docs/11_SYS2_system_req.md` §4 の `OPN-*` を参照。特に以下は実装を進める前に実測で確定する。
 
-- `OPN-15` **ビルドプラットフォームと表示ライブラリの選定**。IDF 4.4 では RGB パネルの bounce buffer が使えない見込み。pioarduino 等の第三者プラットフォームを使うなら採用前に確認を取る
-- `OPN-12` **480×480 RGB パネルでの実描画性能**。`SYS-12`（30 fps）を満たせるか。フレームバッファは PSRAM 必須で `DEC-05` が変わっている。満たせないと `DOC-23` から作り直し
+- `OPN-15` ビルドプラットフォーム。**pioarduino 55.03.312-1 + ESP32_Display_Panel + LVGL 9.2.2 で暫定決定**（`DEC-01` / `DEC-09`）。
+  残り: TWAI の実機動作、第三者プラットフォームのサプライチェーン確認、CI でのビルド
+- `OPN-12` 480×480 RGB の実描画性能。**λ ページは LVGL で平均 39 fps**（`SYS-12` 達成）。残り: CAN 受信中・NVS 書き込み中・他ページ
 - `OPN-13` CAN を GPIO20(TX) / GPIO19(RX)（12PIN の D+/D−）に割り当てる案の実機検証。起動直後にバスへ何も出ないこと（`IT-04`）
 - `OPN-14` 12PIN の `VBus` へ Mini CAN の 5V を入れて成立するか、本体の消費電流
 - `OPN-01` Mini CAN Unit の終端抵抗の有無
@@ -96,10 +115,13 @@ C++17 / `.clang-format`（Google ベース・インデント 4・列幅 110）/ 
 
 ## 未実装（フェーズ P4 以降）
 
-- `include/lv_conf.h` — LVGL の設定ヘッダ。LVGL を使い始めるときに作成する
-- `lib/ui/` 一式（`LvglPort` / `PageManager` / `IPage` 実装 / `LambdaRing`）
-- `lib/hal/` の `InputDriver` / `DisplayHal` / `NvsStore` / `Diagnostics`
-- `assets/` のロゴ・数字フォント（`OPN-05`）
+実装済み: `include/lv_conf.h`、`LvglPort`、`LambdaRing`、`BigNumber`、`PageLambda`、`PageSplash`、`DisplayHal`、
+`CanRxTask`、数字フォント（`tools/make_font.py`）、480×480 のロゴ。
+
+- `PageManager` と λ ページ以外のページ（`PAGE_DUAL` / `ENGINE` / `ELEC` / `DIAG` / `SETTINGS`）
+- タッチ入力（`InputDriver`。`DisplayHal::readTouch()` はある）
+- `lib/hal/` の `NvsStore` / `Diagnostics`、ブザー（ピン未確認: `OPN-13`）
+- `bench_check.py` / Skill の CH343（VID 1A86）対応と、`lcd_capture.py` を使った画面採点
 
 ## 表示の目視確認（UVC カメラ）
 

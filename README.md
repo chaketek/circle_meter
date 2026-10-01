@@ -95,6 +95,24 @@ PowerShell からは `tools/` のスクリプトが使えます。
 ./tools/flash_and_monitor.ps1
 ```
 
+### LCD-2.1 版（開発中）
+
+対象ボード（Waveshare ESP32-S3-Touch-LCD-2.1）向けの実装は LVGL 9 + pioarduino で、**PowerShell から**ビルドします
+（Git Bash では pioarduino の導入に失敗します。詳細は [DOC-40 §2.3](docs/40_SUP8_cm_dev_environment.md)）。
+書き込みと確認は CH343P の UART Type-C（ネイティブ USB-C は使いません）から行います。
+
+CAN を繋がずに画面だけを確認するスイープデモ（λ が 8.5 秒で 0.68 ⇄ 1.36 を往復し、EGT は 300 ⇄ 960 °C）:
+
+```powershell
+python -m platformio run -e lcd21_sim -t upload --upload-port COM10
+```
+
+シリアル（115200）から 1 文字送ると操作できます: `h` 停止/再開、`0`〜`9` その位置で停止、`m` AFR/λ 切替。
+1 秒ごとに fps と 1 フレームの描画時間も出ます（`DOC-30` の `QT-03`）。
+
+実 CAN 版は `-e lcd21` です（物理層を繋いでから。CAN の GPIO は実機未確認: `OPN-13`）。
+M5Dial 向けの `m5dial` / `m5dial_sim` は廃止予定です。
+
 ## 配線
 
 車両 12V と CAN_H / CAN_L を Mini CAN の端子台へ入れ、Grove ケーブルを本体の **12PIN** へ繋ぎます。

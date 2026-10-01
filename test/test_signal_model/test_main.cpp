@@ -1,16 +1,21 @@
 // SWE.4 ユニット検証: 信号モデル（鮮度・単位換算・設定）
-// UT-05 〜 UT-09, UT-11 〜 UT-16  (docs/30_test_strategy.md §2)
+// UT-05 〜 UT-09, UT-11 〜 UT-19  (docs/30_test_strategy.md §2)
 #include <unity.h>
 
 #include <atomic>
+#include <cmath>
 #include <cstring>
+#include <initializer_list>
 #include <new>
 #include <thread>
 
 #include "button_fsm.h"
 #include "config.h"
+#include "display_policy.h"
+#include "ring_geometry.h"
 #include "rusefi_decoder.h"
 #include "signal_store.h"
+#include "sweep_sim.h"
 #include "units.h"
 
 using namespace cm;
@@ -574,6 +579,142 @@ void test_UT16_future_timestamp_across_wraparound() {
     TEST_ASSERT_EQUAL_UINT32(2560, s2.ageMs(SignalId::Egt1));
 }
 
+// ---------------------------------------------------------------- UT-17
+// SWD-08 / DEC-05: リングの無効領域を差分に絞るための外接矩形
+void test_UT17_ratio_to_angle_clamps() {
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 135.0f, ring_geometry::angleOfRatio(0.0f, 135.0f, 270.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 270.0f, ring_geometry::angleOfRatio(0.5f, 135.0f, 270.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 405.0f, ring_geometry::angleOfRatio(1.0f, 135.0f, 270.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 135.0f, ring_geometry::angleOfRatio(-3.0f, 135.0f, 270.0f));
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 405.0f, ring_geometry::angleOfRatio(9.0f, 135.0f, 270.0f));
+}
+
+void test_UT17_sector_bounds_contain_every_arc_point() {
+    // 開始角と掃引角を振り、扇形上のどの点（内周・中間・外周）も矩形に入ること
+    constexpr int kCx = 240, kCy = 240, kRi = 192, kRo = 236;
+    for (int start = 0; start < 360; start += 15) {
+        for (int sweep = 5; sweep <= 355; sweep += 50) {
+            const IntRect b = ring_geometry::annularSectorBounds(
+                kCx, kCy, kRi, kRo, static_cast<float>(start), static_cast<float>(sweep), 0);
+            for (int a = 0; a <= sweep; a += 1) {
+                const float rad = (static_cast<float>(start + a)) * ring_geometry::kPi / 180.0f;
+                for (int r : {kRi, (kRi + kRo) / 2, kRo}) {
+                    const float x = kCx + r * std::cos(rad);
+                    const float y = kCy + r * std::sin(rad);
+                    TEST_ASSERT_TRUE_MESSAGE(x >= b.x1 - 1 && x <= b.x2 + 1 && y >= b.y1 - 1 && y <= b.y2 + 1,
+                                             "arc point outside bounds");
+                }
+            }
+        }
+    }
+}
+
+void test_UT17_small_change_is_a_small_area() {
+    // 1 フレーム分の変化（約 2°）は、全画面（230,400 px）の 2% 未満に収まること。
+    // これが SYS-12 を満たす前提（全面再描画は 16 fps）
+    const IntRect b = ring_geometry::annularSectorBounds(240, 240, 192, 236, 270.0f, 2.0f, 2);
+    TEST_ASSERT_TRUE(b.pixels() < 230400 / 50);
+    // 逆に、全周なら円全体の外接矩形になる
+    const IntRect full = ring_geometry::annularSectorBounds(240, 240, 192, 236, 0.0f, 360.0f, 0);
+    TEST_ASSERT_EQUAL_INT(4, full.x1);
+    TEST_ASSERT_EQUAL_INT(476, full.x2);
+    TEST_ASSERT_EQUAL_INT(4, full.y1);
+    TEST_ASSERT_EQUAL_INT(476, full.y2);
+}
+
+void test_UT17_negative_sweep_is_normalised() {
+    const IntRect a = ring_geometry::annularSectorBounds(240, 240, 192, 236, 200.0f, 30.0f, 0);
+    const IntRect b = ring_geometry::annularSectorBounds(240, 240, 192, 236, 230.0f, -30.0f, 0);
+    TEST_ASSERT_EQUAL_INT(a.x1, b.x1);
+    TEST_ASSERT_EQUAL_INT(a.y1, b.y1);
+    TEST_ASSERT_EQUAL_INT(a.x2, b.x2);
+    TEST_ASSERT_EQUAL_INT(a.y2, b.y2);
+}
+
+// ---------------------------------------------------------------- UT-18
+// SWR-100: スイープ生成
+void test_UT18_sweep_stays_in_range_and_reaches_both_ends() {
+    SweepSim sim;
+    float minL = 9.0f, maxL = 0.0f, maxEgt = 0.0f;
+    for (int i = 0; i < 20000; ++i) {  // 33 ms * 20000 = 660 s
+        const SweepOutput o = sim.step(33);
+        TEST_ASSERT_TRUE(o.lambda >= SweepSim::kLambdaLo - 1e-4f && o.lambda <= SweepSim::kLambdaHi + 1e-4f);
+        minL   = (o.lambda < minL) ? o.lambda : minL;
+        maxL   = (o.lambda > maxL) ? o.lambda : maxL;
+        maxEgt = (o.egtC > maxEgt) ? o.egtC : maxEgt;
+    }
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, SweepSim::kLambdaLo, minL);
+    TEST_ASSERT_FLOAT_WITHIN(0.01f, SweepSim::kLambdaHi, maxL);
+    // 上端で EGT DANGER（既定 920 °C）まで届く = 警告表示も目視できる
+    TEST_ASSERT_TRUE(maxEgt >= 920.0f);
+}
+
+void test_UT18_sweep_visits_every_zone() {
+    SweepSim sim;
+    bool seen[5] = {false, false, false, false, false};
+    for (int i = 0; i < 1000; ++i) {
+        seen[static_cast<int>(zoneOf(sim.step(33).lambda, kZones))] = true;
+    }
+    for (bool s : seen) {
+        TEST_ASSERT_TRUE(s);
+    }
+}
+
+void test_UT18_egt_is_quantised_like_rusefi() {
+    // 実機の EGT は 5 °C 刻み（DOC-13）。1 °C 刻みだと実機より重い描画負荷を測ってしまう
+    SweepSim sim;
+    for (int i = 0; i < 1000; ++i) {
+        const float egt = sim.step(33).egtC;
+        TEST_ASSERT_FLOAT_WITHIN(1e-3f, 0.0f, std::fmod(egt, 5.0f));
+    }
+}
+
+void test_UT18_seek_and_hold() {
+    SweepSim sim;
+    sim.seek(0.5f);
+    const SweepOutput a = sim.step(0);  // dt = 0 は進めない
+    const SweepOutput b = sim.step(0);
+    TEST_ASSERT_EQUAL_FLOAT(a.lambda, b.lambda);
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, 1.02f, a.lambda);  // 0.68 と 1.36 の中点
+    sim.seek(7.0f);                                    // 範囲外はクランプ
+    TEST_ASSERT_FLOAT_WITHIN(1e-3f, SweepSim::kLambdaHi, sim.step(0).lambda);
+}
+
+void test_UT18_sweep_survives_huge_dt() {
+    SweepSim sim;
+    const SweepOutput o = sim.step(100000);  // 1 往復以上
+    TEST_ASSERT_TRUE(o.lambda >= SweepSim::kLambdaLo - 1e-4f && o.lambda <= SweepSim::kLambdaHi + 1e-4f);
+}
+
+// ---------------------------------------------------------------- UT-19
+// SYS-20 / SWR-46: 輝度テーブルと EGT 点滅
+void test_UT19_brightness_table() {
+    TEST_ASSERT_EQUAL_UINT8(10, brightnessPercent(1));
+    TEST_ASSERT_EQUAL_UINT8(25, brightnessPercent(2));
+    TEST_ASSERT_EQUAL_UINT8(50, brightnessPercent(3));
+    TEST_ASSERT_EQUAL_UINT8(75, brightnessPercent(4));
+    TEST_ASSERT_EQUAL_UINT8(100, brightnessPercent(5));
+    TEST_ASSERT_EQUAL_UINT8(10, brightnessPercent(0));  // 範囲外はクランプ
+    TEST_ASSERT_EQUAL_UINT8(100, brightnessPercent(200));
+}
+
+void test_UT19_egt_blink_is_2hz() {
+    TEST_ASSERT_TRUE(egtBlinkOn(0));
+    TEST_ASSERT_TRUE(egtBlinkOn(249));
+    TEST_ASSERT_FALSE(egtBlinkOn(250));
+    TEST_ASSERT_FALSE(egtBlinkOn(499));
+    TEST_ASSERT_TRUE(egtBlinkOn(500));
+    // 1 秒の間に消灯 -> 点灯の立ち上がりが 500 ms と 1000 ms の 2 回ある（2 Hz）
+    int rising = 0;
+    bool prev  = egtBlinkOn(0);
+    for (uint32_t t = 1; t <= 1000; ++t) {
+        const bool cur = egtBlinkOn(t);
+        rising += (!prev && cur) ? 1 : 0;
+        prev = cur;
+    }
+    TEST_ASSERT_EQUAL_INT(2, rising);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_UT05_zone_boundaries_exact);
@@ -612,5 +753,16 @@ int main(int, char**) {
     RUN_TEST(test_UT15_snapshot_is_not_torn);
     RUN_TEST(test_UT16_future_timestamp_is_not_lost);
     RUN_TEST(test_UT16_future_timestamp_across_wraparound);
+    RUN_TEST(test_UT17_ratio_to_angle_clamps);
+    RUN_TEST(test_UT17_sector_bounds_contain_every_arc_point);
+    RUN_TEST(test_UT17_small_change_is_a_small_area);
+    RUN_TEST(test_UT17_negative_sweep_is_normalised);
+    RUN_TEST(test_UT18_sweep_stays_in_range_and_reaches_both_ends);
+    RUN_TEST(test_UT18_sweep_visits_every_zone);
+    RUN_TEST(test_UT18_egt_is_quantised_like_rusefi);
+    RUN_TEST(test_UT18_seek_and_hold);
+    RUN_TEST(test_UT18_sweep_survives_huge_dt);
+    RUN_TEST(test_UT19_brightness_table);
+    RUN_TEST(test_UT19_egt_blink_is_2hz);
     return UNITY_END();
 }
