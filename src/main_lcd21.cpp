@@ -152,6 +152,26 @@ void handleDebugKeys() {
 }
 #endif
 
+#ifndef CM_ENABLE_CAN_SIM
+/// tools/bench_check.py が読む行（M5Dial 版 src/main.cpp と同じ形式。DOC-30 の IT-* で使う）。
+void printCanStatus(uint32_t nowMs, uint32_t frameUs) {
+    const CanStats& st  = g_can.stats();
+    const Snapshot snap = g_store.snapshot(nowMs);
+    float lam = 0.0f, egt = 0.0f;
+    const bool hasLam = snap.get(SignalId::Lambda1, lam);
+    const bool hasEgt = snap.get(SignalId::Egt1, egt);
+    Serial.printf(
+        "rx=%lu f/s=%lu unk=%lu dlc=%lu ovf=%lu tec=%lu rec=%lu | lam=%s%.3f egt=%s%.0f | "
+        "ageL=%lu ageE=%lu snapFail=%lu | draw=%luus (max %lu fps) heap=%u\n",
+        (unsigned long)st.rxFrames, (unsigned long)st.framesPerSec, (unsigned long)st.unknownId,
+        (unsigned long)st.badDlc, (unsigned long)st.queueOverflow, (unsigned long)st.tec,
+        (unsigned long)st.rec, hasLam ? "" : "(none)", lam, hasEgt ? "" : "(none)", egt,
+        (unsigned long)snap.ageMs(SignalId::Lambda1), (unsigned long)snap.ageMs(SignalId::Egt1),
+        (unsigned long)g_store.snapshotFailures(), (unsigned long)frameUs,
+        (unsigned long)(frameUs ? 1000000UL / frameUs : 0), static_cast<unsigned>(ESP.getFreeHeap()));
+}
+#endif
+
 void printBanner() {
     Serial.printf("\ncircle_meter %s  (LCD-2.1 / LVGL %d.%d.%d)\n", CM_FW_VERSION, LVGL_VERSION_MAJOR,
                   LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
@@ -204,10 +224,14 @@ void setup() {
 
     // スプラッシュを描き終えてからバックライトを上げる（起動時のちらつき対策）
     pump(100);
+    // SYS-19 / QT-06: 最初の描画が終わった時刻。millis() はアプリ開始からで、ROM・ブートローダの時間
+    // （約 0.3 秒）を含まない。リセットからの時間はホスト側でこの行の受信時刻から測る
+    Serial.printf("boot: first frame at %lu ms\n", static_cast<unsigned long>(millis()));
     const int target = brightnessPercent(g_cfg.brightness);
     fadeBacklight(0, target, kSplashFadeInMs);
     pump(signalSourceSeen() ? kSplashHoldShortMs : kSplashHoldMs);
     fadeBacklight(target, 0, kSplashFadeOutMs);
+    Serial.printf("boot: splash end at %lu ms\n", static_cast<unsigned long>(millis()));
 
     // 本画面を最初の 1 フレームまで描いてからバックライトを戻す（黒画面の一瞬を見せない）
     g_splash.onHide();
@@ -251,7 +275,14 @@ void loop() {
         char diag[24];
         const unsigned fps = (s.frames > 99) ? 99u : static_cast<unsigned>(s.frames);
         const unsigned ms  = (perFrameUs / 1000 > 99) ? 99u : static_cast<unsigned>(perFrameUs / 1000);
+#ifdef CM_ENABLE_CAN_SIM
         snprintf(diag, sizeof(diag), "%u fps  %u ms", fps, ms);
+#else
+        (void)ms;
+        const unsigned canFps =
+            static_cast<unsigned>(g_can.stats().framesPerSec > 9999 ? 9999 : g_can.stats().framesPerSec);
+        snprintf(diag, sizeof(diag), "%u fps  %u f/s", fps, canFps);
+#endif
         g_lambda.setDiagText(diag);
 
         Serial.printf(
@@ -265,6 +296,9 @@ void loop() {
             static_cast<unsigned>((mon.total_size - mon.free_biggest_size) / 1024),
             static_cast<unsigned>(ESP.getFreeHeap() / 1024),
             static_cast<unsigned>(ESP.getFreePsram() / 1024));
+#ifndef CM_ENABLE_CAN_SIM
+        printCanStatus(now, perFrameUs);
+#endif
     }
 
     delay(wait < 1 ? 1 : (wait > 4 ? 4 : wait));
