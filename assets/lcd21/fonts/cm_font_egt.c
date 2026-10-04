@@ -1,5 +1,5 @@
 // tools/make_font.py が生成。手で編集しないこと。
-// cm_font_egt: Montserrat Bold 76 px / 4 bpp / 非圧縮 / 排気温度（例 845°C） (DOC-23 §9)
+// cm_font_egt: Montserrat-Bold.ttf 76 px / 4 bpp / 非圧縮 / 排気温度（例 845°C） (DOC-23 §9)
 #include "lvgl.h"
 
 static const uint8_t glyph_bitmap[13603] = {

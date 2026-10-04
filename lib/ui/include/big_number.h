@@ -30,6 +30,11 @@ public:
     /// 書体と領域幅を変える（AFR <-> λ の切替）。全体を再描画する。
     void setFont(const lv_font_t* font, int width);
 
+    /// 数字以外の文字のセル幅を「数字セル x scale」に固定する（SWR-50）。等幅書体の '.' や '°'
+    /// は数字と同じ幅で 間が空いて見えるので詰める。固定幅なので、値が変わっても位置は動かない。最大
+    /// kMaxScaled 文字。
+    void setCellScale(uint32_t codepoint, float scale);
+
     /// 表示する文字列（UTF-8）と色。前回と同じ桁・同じ色は再描画しない。
     void setText(const char* text, uint32_t colorHex);
 
@@ -56,6 +61,11 @@ private:
     int m_digitW            = 0;
     uint32_t m_colorHex     = 0;
     int m_count             = 0;
+
+    static constexpr int kMaxScaled = 4;
+    uint32_t m_scaledCp[kMaxScaled]{};
+    float m_scale[kMaxScaled]{};
+    int m_scaledCount = 0;
     Cell m_cells[kMaxChars]{};  // 描画は後で行われるので、文字列（utf8）もセルが保持する
 };
 

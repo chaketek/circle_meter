@@ -25,16 +25,28 @@ except ImportError:
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 TTF = os.path.join(ROOT, "assets", "fonts", "Montserrat-Bold.ttf")
+B612_BOLD = os.path.join(ROOT, "assets", "fonts", "B612Mono-Bold.ttf")
+B612_REG = os.path.join(ROOT, "assets", "fonts", "B612Mono-Regular.ttf")
+UPPER = " -./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+ASCII = "".join(chr(c) for c in range(0x20, 0x7F))
 OUT_DIR = os.path.join(ROOT, "assets", "lcd21", "fonts")
 
 DIGITS = "0123456789.-"
 
 # (シンボル名, サイズ px, 収録文字, 用途)
 # サイズは DOC-23 §3.3 / §4 の円に収まる最大値（--probe の結果から決めた）
+# (シンボル名, サイズ px, 収録文字, 用途, TTF)
+# サイズは DOC-23 §3.3 / §3.5 / §4 の円に収まる最大値（--probe の結果から決めた）
 FONTS = [
-    ("cm_font_afr", 136, DIGITS, "主数値 AFR（例 14.7）"),
-    ("cm_font_lambda", 108, DIGITS, "主数値 λ（例 1.000）"),
-    ("cm_font_egt", 76, "0123456789-\u00b0C", "排気温度（例 845°C）"),
+    ("cm_font_afr", 136, DIGITS, "主数値 AFR（例 14.7）", TTF),
+    ("cm_font_lambda", 108, DIGITS, "主数値 λ（例 1.000）", TTF),
+    ("cm_font_egt", 76, "0123456789-\u00b0C", "排気温度（例 845°C）", TTF),
+    # 表示デザイン A（指針式・大森風。DOC-23 §3.5）。B612 Mono は等幅（SWR-50）
+    ("cm_font_b612_main", 70, DIGITS, "A: 主数値（例 14.2 / 1.000）", B612_BOLD),
+    ("cm_font_b612_egt", 34, "0123456789-\u00b0C", "A: 排気温度（例 712°C）", B612_BOLD),
+    ("cm_font_b612_scale", 28, "0123456789", "A: 目盛り数字", B612_REG),
+    ("cm_font_b612_label", 22, UPPER, "A: 銘板・NO SIGNAL", B612_BOLD),
+    ("cm_font_b612_small", 14, ASCII, "A: 小さい銘板・診断", B612_REG),
 ]
 
 
@@ -69,8 +81,8 @@ def pack4(vals):
     return out
 
 
-def build(name, size, chars, note):
-    font = ImageFont.truetype(TTF, size, layout_engine=ImageFont.Layout.BASIC)
+def build(name, size, chars, note, ttf=TTF):
+    font = ImageFont.truetype(ttf, size, layout_engine=ImageFont.Layout.BASIC)
     cps = sorted(set(ord(c) for c in chars))
     glyphs = [glyph_of(font, chr(cp)) for cp in cps]
 
@@ -98,7 +110,7 @@ def build(name, size, chars, note):
 
     lines = []
     lines.append(f"// tools/make_font.py が生成。手で編集しないこと。")
-    lines.append(f"// {name}: Montserrat Bold {size} px / 4 bpp / 非圧縮 / {note} (DOC-23 §9)")
+    lines.append(f"// {name}: {os.path.basename(ttf)} {size} px / 4 bpp / 非圧縮 / {note} (DOC-23 §9)")
     lines.append('#include "lvgl.h"')
     lines.append("")
     lines.append(f"static const uint8_t glyph_bitmap[{len(bitmap)}] = {{")
@@ -184,8 +196,8 @@ def main():
         return
     os.makedirs(OUT_DIR, exist_ok=True)
     decl = ["// tools/make_font.py が生成。手で編集しないこと。", "#pragma once", '#include "lvgl.h"', ""]
-    for name, size, chars, note in FONTS:
-        src, nbytes, line_h = build(name, size, chars, note)
+    for name, size, chars, note, ttf in FONTS:
+        src, nbytes, line_h = build(name, size, chars, note, ttf)
         with open(os.path.join(OUT_DIR, name + ".c"), "w", encoding="utf-8", newline="\n") as f:
             f.write(src)
         decl.append(f"extern const lv_font_t {name};  // {size} px / {note}")

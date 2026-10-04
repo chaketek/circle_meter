@@ -1,5 +1,5 @@
 // tools/make_font.py が生成。手で編集しないこと。
-// cm_font_lambda: Montserrat Bold 108 px / 4 bpp / 非圧縮 / 主数値 λ（例 1.000） (DOC-23 §9)
+// cm_font_lambda: Montserrat-Bold.ttf 108 px / 4 bpp / 非圧縮 / 主数値 λ（例 1.000） (DOC-23 §9)
 #include "lvgl.h"
 
 static const uint8_t glyph_bitmap[23662] = {

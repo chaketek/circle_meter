@@ -24,6 +24,8 @@ public:
     virtual void onUpdate(const Snapshot& snap, const Config& cfg) = 0;
     /// true = 消費した（PageManager はページ切替として扱わない）
     virtual bool onEvent(InputEvent ev) = 0;
+    /// 画面の隅に出す診断文字列（デモの fps など）。出す場所が無いページは無視してよい。
+    virtual void setDiagText(const char*) {}
 };
 
 }  // namespace cm::ui

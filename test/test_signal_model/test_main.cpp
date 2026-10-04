@@ -1,5 +1,5 @@
 // SWE.4 ユニット検証: 信号モデル（鮮度・単位換算・設定）
-// UT-05 〜 UT-09, UT-11 〜 UT-19  (docs/30_test_strategy.md §2)
+// UT-05 〜 UT-09, UT-11 〜 UT-21  (docs/30_test_strategy.md §2)
 #include <unity.h>
 
 #include <atomic>
@@ -11,6 +11,7 @@
 
 #include "button_fsm.h"
 #include "config.h"
+#include "display_filter.h"
 #include "display_policy.h"
 #include "ring_geometry.h"
 #include "rusefi_decoder.h"
@@ -343,6 +344,10 @@ void test_UT13_every_field_affects_crc() {
     c               = base;
     c.buzzerEnabled = false;
     TEST_ASSERT_NOT_EQUAL(computeCrc(base), computeCrc(c));
+
+    c           = base;
+    c.dialStyle = static_cast<uint8_t>(DialStyle::Ring);
+    TEST_ASSERT_NOT_EQUAL(computeCrc(base), computeCrc(c));
 }
 
 void test_UT13_crc_mismatch_detected() {
@@ -404,6 +409,11 @@ void test_UT13_range_violations_rejected() {
     c                = defaultConfig();
     c.canBitrateKbps = 125;
     c.crc32          = computeCrc(c);
+    TEST_ASSERT_FALSE(validate(c));
+
+    c           = defaultConfig();
+    c.dialStyle = static_cast<uint8_t>(DialStyle::Count);  // SYS-21: 範囲外のデザイン
+    c.crc32     = computeCrc(c);
     TEST_ASSERT_FALSE(validate(c));
 }
 
@@ -715,6 +725,90 @@ void test_UT19_egt_blink_is_2hz() {
     TEST_ASSERT_EQUAL_INT(2, rising);
 }
 
+// ---------------------------------------------------------------- UT-20
+// DEC-10: 浮かせた針を長さ方向に分割した外接矩形
+void test_UT20_needle_segments_contain_the_needle() {
+    constexpr float kBase = 110.0f, kTip = 224.0f, kW = 9.0f;
+    constexpr int kSeg = 6;
+    for (int a = 0; a < 360; a += 7) {
+        const float deg = static_cast<float>(a);
+        const float rad = deg * ring_geometry::kPi / 180.0f;
+        const float dx = std::cos(rad), dy = std::sin(rad), nx = -dy, ny = dx;
+        // 針の上の点を細かく取り、どれかの区間の矩形に入ること
+        for (int i = 0; i <= 100; ++i) {
+            const float t  = static_cast<float>(i) / 100.0f;
+            const float r  = kBase + (kTip - kBase) * t;
+            const float hw = 0.5f * kW * (1.0f - t);
+            for (float s : {-1.0f, 0.0f, 1.0f}) {
+                const float x = 240.0f + r * dx + s * hw * nx;
+                const float y = 240.0f + r * dy + s * hw * ny;
+                bool inside   = false;
+                for (int k = 0; k < kSeg && !inside; ++k) {
+                    const IntRect b =
+                        ring_geometry::needleSegmentBounds(240, 240, deg, kBase, kTip, kW, k, kSeg, 0);
+                    inside = x >= b.x1 - 1 && x <= b.x2 + 1 && y >= b.y1 - 1 && y <= b.y2 + 1;
+                }
+                TEST_ASSERT_TRUE_MESSAGE(inside, "needle point outside all segments");
+            }
+        }
+    }
+}
+
+void test_UT20_segments_are_smaller_than_whole_bounds() {
+    // 45° の針は外接矩形が最も無駄になる。6 分割の合計はその半分未満（実測 約 0.4 倍）
+    int32_t sum = 0;
+    for (int k = 0; k < 6; ++k) {
+        sum += ring_geometry::needleSegmentBounds(240, 240, 45.0f, 110.0f, 224.0f, 9.0f, k, 6, 2).pixels();
+    }
+    const IntRect whole = ring_geometry::needleSegmentBounds(240, 240, 45.0f, 110.0f, 224.0f, 9.0f, 0, 1, 2);
+    TEST_ASSERT_TRUE(sum * 2 < whole.pixels());
+}
+
+// ---------------------------------------------------------------- UT-21
+// RSK-01 / SWR-24 / SWR-49: 表示値の判定
+void test_UT21_lost_gives_no_value() {
+    SignalStore store;
+    DisplayFilter f;
+    const Config cfg = defaultConfig();
+    store.update(SignalId::Lambda1, 1.00f, 1000);
+    DisplayValues v = f.update(store.snapshot(1000), cfg);
+    TEST_ASSERT_TRUE(v.hasLambda);
+    v = f.update(store.snapshot(1000 + kLostAfterMs + 10), cfg);  // 途絶
+    TEST_ASSERT_FALSE(v.hasLambda);
+    TEST_ASSERT_EQUAL(static_cast<int>(Freshness::Lost), static_cast<int>(v.lambdaFr));
+}
+
+void test_UT21_recovery_does_not_glide_from_old_value() {
+    SignalStore store;
+    DisplayFilter f;
+    const Config cfg = defaultConfig();
+    store.update(SignalId::Lambda1, 0.80f, 1000);
+    f.update(store.snapshot(1000), cfg);
+    f.update(store.snapshot(1033), cfg);
+    f.update(store.snapshot(1000 + kLostAfterMs + 10), cfg);  // Lost
+    // 復帰した最初の値がそのまま出る（0.80 から 1.20 へ LPF で泳がない）
+    store.update(SignalId::Lambda1, 1.20f, 4000);
+    const DisplayValues v = f.update(store.snapshot(4000), cfg);
+    TEST_ASSERT_TRUE(v.hasLambda);
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.20f, v.lambda);
+}
+
+void test_UT21_lpf_and_stale_and_levels() {
+    SignalStore store;
+    DisplayFilter f;
+    const Config cfg = defaultConfig();
+    store.update(SignalId::Lambda1, 1.00f, 1000);
+    store.update(SignalId::Egt1, 900.0f, 1000);
+    f.update(store.snapshot(1000), cfg);
+    store.update(SignalId::Lambda1, 0.80f, 1033);
+    const DisplayValues v1 = f.update(store.snapshot(1033), cfg);
+    TEST_ASSERT_TRUE(v1.lambda < 1.00f && v1.lambda > 0.80f);  // 時定数 80 ms で途中まで
+    TEST_ASSERT_EQUAL(static_cast<int>(EgtLevel::Warn), static_cast<int>(v1.egtLevel));
+    const DisplayValues v2 = f.update(store.snapshot(1033 + kStaleAfterMs + 10), cfg);
+    TEST_ASSERT_TRUE(v2.hasLambda);
+    TEST_ASSERT_TRUE(v2.lambdaStale);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_UT05_zone_boundaries_exact);
@@ -764,5 +858,10 @@ int main(int, char**) {
     RUN_TEST(test_UT18_sweep_survives_huge_dt);
     RUN_TEST(test_UT19_brightness_table);
     RUN_TEST(test_UT19_egt_blink_is_2hz);
+    RUN_TEST(test_UT20_needle_segments_contain_the_needle);
+    RUN_TEST(test_UT20_segments_are_smaller_than_whole_bounds);
+    RUN_TEST(test_UT21_lost_gives_no_value);
+    RUN_TEST(test_UT21_recovery_does_not_glide_from_old_value);
+    RUN_TEST(test_UT21_lpf_and_stale_and_levels);
     return UNITY_END();
 }

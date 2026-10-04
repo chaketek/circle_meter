@@ -4,6 +4,7 @@
 #include <cstring>
 
 #include "display_policy.h"
+#include "page_common.h"
 #include "fonts/cm_fonts.h"
 #include "theme.h"
 #include "units.h"
@@ -11,12 +12,6 @@
 namespace cm::ui {
 
 namespace {
-
-// UTF-8 の度記号。"\xB0C" と続けると 16 進エスケープが "B0C" と読まれるので、リテラルを分ける
-#define CM_DEG "\xC2\xB0"
-
-constexpr float kLambdaTauMs = 80.0f;   // SWR-24
-constexpr float kEgtTauMs    = 200.0f;  // SWR-24
 
 // BigNumber の幅は「等幅セルの総幅」以上にする。セルが領域の外へはみ出すと、無効化が領域に切り詰められて
 // 端の数 px を描き残す。総幅 = 数字セル（その書体で最も広い数字）x 桁数 + 記号の送り幅（tools/make_font.py の
@@ -66,8 +61,6 @@ void PageLambda::onCreate(lv_obj_t* parent, const Config& cfg) {
     m_mainNum.create(m_root, m_showAfr ? &cm_font_afr : &cm_font_lambda,
                      m_showAfr ? kMainWidthAfr : kMainWidthLambda, layout::kMainY);
     m_egtNum.create(m_root, &cm_font_egt, kEgtWidth, layout::kEgtY);
-    m_lpfLambda.configure(kLambdaTauMs);
-    m_lpfEgt.configure(kEgtTauMs);
     m_status = makeLabel(m_root, &lv_font_montserrat_24, color::kTextSub, 240, layout::kStatusY);
 
     // LVGL のラベルは作成直後に "Text" と表示する。空の保持配列を参照させて消しておく
@@ -122,92 +115,27 @@ void PageLambda::onUpdate(const Snapshot& snap, const Config& cfg) {
     if (cfg.showAfr != m_showAfr) {
         applyMainFont(cfg.showAfr);
     }
+    const DisplayValues v = m_filter.update(snap, cfg);  // Lost なら hasLambda = false（RSK-01）
+    const bool blinkOn    = egtBlinkOn(snap.takenAtMs);
     char buf[16];
 
-    const uint32_t dtMs = m_hasLastUpdate ? snap.takenAtMs - m_lastUpdateMs : 0;
-    m_lastUpdateMs      = snap.takenAtMs;
-    m_hasLastUpdate     = true;
+    // ---- λ リング
+    const uint32_t ringHex = (v.hasLambda && !v.lambdaStale) ? zoneColorHex(v.zone) : color::kDisabled;
+    m_ring.set(v.ringRatio, ringHex, v.hasLambda);
 
-    // ---- λ
-    float lambda        = 0.0f;
-    const bool hasL     = snap.get(SignalId::Lambda1, lambda);  // Lost なら false（RSK-01）
-    const Freshness frL = snap.freshnessOf(SignalId::Lambda1);
-    if (hasL) {
-        // 喪失から復帰したときは古い値から緩やかに追従させない（Lpf1 の契約）。最初の 1 点で seed する
-        if (!m_lambdaSeeded) {
-            m_lpfLambda.reset(lambda);
-            m_lambdaSeeded = true;
-        }
-        lambda = m_lpfLambda.update(lambda, dtMs);
-    } else {
-        m_lambdaSeeded = false;
-    }
-    const bool staleL     = (frL == Freshness::Stale);
-    const LambdaZone zone = zoneOf(lambda, cfg.zones);
-
-    uint32_t ringHex = color::kDisabled;
-    if (hasL && !staleL) {
-        ringHex = zoneColorHex(zone);
-    }
-    m_ring.set(ringRatio(lambda, cfg.ringLo, cfg.ringHi), ringHex, hasL);
-
-    if (hasL) {
-        if (cfg.showAfr) {
-            std::snprintf(buf, sizeof(buf), "%.1f", lambdaToAfr(lambda, cfg.stoich));
-        } else {
-            std::snprintf(buf, sizeof(buf), "%.3f", lambda);
-        }
-    } else {
-        std::snprintf(buf, sizeof(buf), "--");
-    }
-
-    uint32_t mainHex = color::kText;
-    if (!hasL || staleL) {
-        mainHex = color::kDisabled;
-    } else if (zone == LambdaZone::LeanHeavy) {
-        mainHex = color::kLeanHeavy;  // DOC-23 §3.3: 白。ただし LEAN_HEAVY のときはゾーン色
-    }
-    m_mainNum.setText(buf, mainHex);
-
+    // ---- 主数値・単位・鮮度
+    formatMain(buf, sizeof(buf), v, cfg);
+    m_mainNum.setText(buf, mainColorHex(v));
     setText(m_unit, m_lastUnit, sizeof(m_lastUnit), cfg.showAfr ? "AFR" : "LAMBDA");
-    setText(m_freshness, m_lastFreshness, sizeof(m_lastFreshness), freshnessText(frL));
+    setText(m_freshness, m_lastFreshness, sizeof(m_lastFreshness), freshnessText(v.lambdaFr));
 
     // ---- EGT
-    float egtC      = 0.0f;
-    const bool hasE = snap.get(SignalId::Egt1, egtC);
-    if (hasE) {
-        if (!m_egtSeeded) {
-            m_lpfEgt.reset(egtC);
-            m_egtSeeded = true;
-        }
-        egtC = m_lpfEgt.update(egtC, dtMs);
-    } else {
-        m_egtSeeded = false;
-    }
-    const bool staleE  = (snap.freshnessOf(SignalId::Egt1) == Freshness::Stale);
-    const EgtLevel lvl = hasE ? levelOf(egtC, cfg.egt) : EgtLevel::Normal;
-    const bool danger  = hasE && !staleE && lvl == EgtLevel::Danger;
-    const bool blinkOn = egtBlinkOn(snap.takenAtMs);
-
-    if (hasE) {
-        std::snprintf(buf, sizeof(buf), "%d" CM_DEG "C", static_cast<int>(egtC + 0.5f));
-    } else {
-        std::snprintf(buf, sizeof(buf), "--" CM_DEG "C");
-    }
-
-    uint32_t egtHex = color::kEgtNormal;
-    if (!hasE || staleE) {
-        egtHex = color::kDisabled;
-    } else if (lvl == EgtLevel::Danger) {
-        egtHex = blinkOn ? color::kDanger : 0x601010;  // 2 Hz 点滅（SWR-46）
-    } else if (lvl == EgtLevel::Warn) {
-        egtHex = color::kWarn;
-    }
-    m_egtNum.setText(buf, egtHex);
-    m_ring.setAlarm(danger && blinkOn);
+    formatEgt(buf, sizeof(buf), v);
+    m_egtNum.setText(buf, egtColorHex(v, blinkOn));
+    m_ring.setAlarm(egtAlarmOn(v, blinkOn));
 
     // ---- 下端: NO SIGNAL が最優先、なければ診断文字列
-    if (frL == Freshness::Lost) {
+    if (v.lambdaFr == Freshness::Lost) {
         setText(m_status, m_lastStatus, sizeof(m_lastStatus), "NO SIGNAL");
         setColor(m_status, &m_lastStatusColor, color::kDanger);
     } else {

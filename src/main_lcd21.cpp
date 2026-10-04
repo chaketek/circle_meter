@@ -18,6 +18,7 @@
 #include "display_policy.h"
 #include "lvgl_port.h"
 #include "page_lambda.h"
+#include "page_needle.h"
 #include "page_splash.h"
 #include "signal_store.h"
 #include "sweep_sim.h"
@@ -43,7 +44,25 @@ SignalStore g_store;
 DisplayHal g_display;
 ui::LvglPort g_port;
 ui::PageSplash g_splash;
-ui::PageLambda g_lambda;
+ui::PageLambda g_lambda;  // SYS-21 (a) リング（AEM 風）
+ui::PageNeedle g_needle;  // SYS-21 (b) 指針式 A（大森風）
+ui::IPage* g_active = nullptr;
+
+/// SYS-21: 設定の表示デザインに対応するページ。両方とも起動時に作ってあり、切替は表示/非表示だけ（規則 5）
+ui::IPage* pageForStyle(uint8_t style) {
+    return (style == static_cast<uint8_t>(DialStyle::Ring)) ? static_cast<ui::IPage*>(&g_lambda)
+                                                            : static_cast<ui::IPage*>(&g_needle);
+}
+
+void activatePage(uint8_t style) {
+    ui::IPage* next = pageForStyle(style);
+    if (g_active != nullptr && g_active != next) {
+        g_active->onHide();
+    }
+    g_active = next;
+    g_active->onShow();
+    g_active->onUpdate(g_store.snapshot(millis()), g_cfg);
+}
 
 #ifndef CM_ENABLE_CAN_SIM
 CanDriver g_can;
@@ -77,6 +96,7 @@ void lvglLog(lv_log_level_t, const char* buf) {
 #ifdef CM_ENABLE_CAN_SIM
 // デモの操作（UART0 から 1 文字）。タッチ操作（SWD-06）の実装前に、各状態を止めて見るためのもの。
 //   h: 停止/再開   0-9: その位置（λ レンジ下端 0 〜 上端 9）で停止   m: AFR/λ 表示切替
+//   v: 表示デザインの切替（SYS-21: リング <-> 指針式 A）
 std::atomic<bool> g_simHold{false};
 std::atomic<float> g_simSeek{-1.0f};
 
@@ -124,13 +144,21 @@ void pump(uint32_t durationMs) {
 
 /// バックライトを PWM で滑らかに変える。画素に触らないので階調が崩れず、CPU もほぼ使わない（DOC-23 §7）。
 void fadeBacklight(int fromPercent, int toPercent, uint32_t durationMs) {
+    // 経過時間で輝度を決める。「16 ms x 回数」で回すと各回の処理時間が積もり、オープニング全体が
+    // SYS-18 の 3.0 秒を約 0.14 秒超えた（2026-10-04 実測）。
     constexpr uint32_t kStepMs = 16;
-    const uint32_t steps       = durationMs / kStepMs ? durationMs / kStepMs : 1;
-    for (uint32_t i = 0; i <= steps; ++i) {
-        const int v = fromPercent + (toPercent - fromPercent) * static_cast<int>(i) / static_cast<int>(steps);
+    const uint32_t t0          = millis();
+    for (;;) {
+        const uint32_t elapsed = millis() - t0;
+        if (elapsed >= durationMs) {
+            break;
+        }
+        const int v = fromPercent +
+                      (toPercent - fromPercent) * static_cast<int>(elapsed) / static_cast<int>(durationMs);
         g_display.setBrightnessPercent(static_cast<uint8_t>(v));
-        pump(kStepMs);
+        pump((durationMs - elapsed < kStepMs) ? durationMs - elapsed : kStepMs);
     }
+    g_display.setBrightnessPercent(static_cast<uint8_t>(toPercent));
 }
 
 #ifdef CM_ENABLE_CAN_SIM
@@ -144,6 +172,12 @@ void handleDebugKeys() {
             g_simSeek = static_cast<float>(c - '0') / 9.0f;
             g_simHold = true;
             Serial.printf("sim: hold at %c/9\n", c);
+        } else if (c == 'v') {
+            // SYS-21: 表示デザインの切替（タッチ入力の実装前の暫定操作）
+            const uint8_t n = static_cast<uint8_t>(DialStyle::Count);
+            g_cfg.dialStyle = static_cast<uint8_t>((g_cfg.dialStyle + 1) % n);
+            activatePage(g_cfg.dialStyle);
+            Serial.printf("dial style: %s\n", g_active->id());
         } else if (c == 'm') {
             g_cfg.showAfr = !g_cfg.showAfr;
             Serial.printf("display: %s\n", g_cfg.showAfr ? "AFR" : "LAMBDA");
@@ -209,6 +243,8 @@ void setup() {
     g_splash.onCreate(g_port.screen(), g_cfg);
     g_lambda.onCreate(g_port.screen(), g_cfg);
     g_lambda.onHide();
+    g_needle.onCreate(g_port.screen(), g_cfg);
+    g_needle.onHide();
     g_splash.onShow();
 
     // SYS-18: スプラッシュ表示中も信号源は動いている
@@ -228,15 +264,23 @@ void setup() {
     // （約 0.3 秒）を含まない。リセットからの時間はホスト側でこの行の受信時刻から測る
     Serial.printf("boot: first frame at %lu ms\n", static_cast<unsigned long>(millis()));
     const int target = brightnessPercent(g_cfg.brightness);
+    // SYS-18: 表示は 3.0 秒が上限。各フェーズの端数が積もらないよう、開始時刻からの締め切りで区切る
+    const uint32_t splashStart = millis();
     fadeBacklight(0, target, kSplashFadeInMs);
-    pump(signalSourceSeen() ? kSplashHoldShortMs : kSplashHoldMs);
-    fadeBacklight(target, 0, kSplashFadeOutMs);
+    const uint32_t holdEnd =
+        splashStart + kSplashFadeInMs + (signalSourceSeen() ? kSplashHoldShortMs : kSplashHoldMs);
+    if (static_cast<int32_t>(holdEnd - millis()) > 0) {
+        pump(holdEnd - millis());
+    }
+    const uint32_t splashEnd = holdEnd + kSplashFadeOutMs;
+    const int32_t fadeOutMs  = static_cast<int32_t>(splashEnd - millis());
+    fadeBacklight(target, 0, fadeOutMs > 0 ? static_cast<uint32_t>(fadeOutMs) : 1);
     Serial.printf("boot: splash end at %lu ms\n", static_cast<unsigned long>(millis()));
 
     // 本画面を最初の 1 フレームまで描いてからバックライトを戻す（黒画面の一瞬を見せない）
     g_splash.onHide();
-    g_lambda.onShow();
-    g_lambda.onUpdate(g_store.snapshot(millis()), g_cfg);
+    activatePage(g_cfg.dialStyle);
+    Serial.printf("dial style: %s\n", g_active->id());
     pump(150);
     fadeBacklight(0, target, kMainFadeInMs);
 
@@ -257,7 +301,7 @@ void loop() {
         if (static_cast<int32_t>(now - nextUiMs) >= 0) {
             nextUiMs = now + kUiPeriodMs;
         }
-        g_lambda.onUpdate(g_store.snapshot(now), g_cfg);
+        g_active->onUpdate(g_store.snapshot(now), g_cfg);
     }
 
 #ifdef CM_ENABLE_CAN_SIM
@@ -283,7 +327,7 @@ void loop() {
             static_cast<unsigned>(g_can.stats().framesPerSec > 9999 ? 9999 : g_can.stats().framesPerSec);
         snprintf(diag, sizeof(diag), "%u fps  %u f/s", fps, canFps);
 #endif
-        g_lambda.setDiagText(diag);
+        g_active->setDiagText(diag);
 
         Serial.printf(
             "fps=%2u | per frame: render=%5u us flush=%5u us px=%6u (%u flush) | lvgl heap used=%u%% (max %u "

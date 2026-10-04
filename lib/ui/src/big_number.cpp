@@ -64,6 +64,20 @@ void BigNumber::applyGeometry() {
     lv_obj_set_pos(m_obj, (layout::kWidth - m_width) / 2, m_centerY - lh / 2);
 }
 
+void BigNumber::setCellScale(uint32_t codepoint, float scale) {
+    for (int k = 0; k < m_scaledCount; ++k) {
+        if (m_scaledCp[k] == codepoint) {
+            m_scale[k] = scale;
+            return;
+        }
+    }
+    if (m_scaledCount < kMaxScaled) {
+        m_scaledCp[m_scaledCount] = codepoint;
+        m_scale[m_scaledCount]    = scale;
+        ++m_scaledCount;
+    }
+}
+
 void BigNumber::setFont(const lv_font_t* font, int width) {
     m_font  = font;
     m_width = width;
@@ -79,7 +93,13 @@ int BigNumber::layout(const char* text, Cell out[kMaxChars]) const {
         Cell& c = out[n];
         text += decodeUtf8(text, &c.cp, c.utf8);
         const bool dig = (c.cp >= '0' && c.cp <= '9');
-        c.w            = static_cast<int16_t>(dig ? m_digitW : lv_font_get_glyph_width(m_font, c.cp, 0));
+        int w          = dig ? m_digitW : lv_font_get_glyph_width(m_font, c.cp, 0);
+        for (int k = 0; !dig && k < m_scaledCount; ++k) {
+            if (m_scaledCp[k] == c.cp) {
+                w = static_cast<int>(static_cast<float>(m_digitW) * m_scale[k] + 0.5f);
+            }
+        }
+        c.w = static_cast<int16_t>(w);
         total += c.w;
         ++n;
     }
