@@ -341,14 +341,18 @@ def run_listen(bus, seconds: float) -> None:
         msg = bus.recv(timeout=0.5)
         if msg is None:
             continue
-        key = (msg.arbitration_id, msg.is_extended_id)
+        # エラーフレームは「誰かがバスを乱した」印（PCAN-Basic: ID = エラー種別、data = 方向・ECC・REC・TEC）。
+        # データフレームと分けて数える。どちらも本機が起動直後にバスを乱していないかの判断材料になる（RSK-13）
+        err = bool(getattr(msg, "is_error_frame", False))
+        key = (msg.arbitration_id, msg.is_extended_id, err)
         seen[key] = seen.get(key, 0) + 1
-        print(f"  {msg.arbitration_id:#05x}  dlc={msg.dlc}  {msg.data.hex(' ')}")
+        tag = "ERROR-FRAME" if err else "data"
+        print(f"  t={time.perf_counter() - t0:6.3f}s  {tag:11s} {msg.arbitration_id:#05x}  dlc={msg.dlc}  {msg.data.hex(' ')}")
     print("---")
     if not seen:
         print("観測フレーム 0 件")
-    for (cid, ext), n in sorted(seen.items()):
-        print(f"  id={cid:#05x} ext={ext} count={n}")
+    for (cid, ext, err), n in sorted(seen.items()):
+        print(f"  id={cid:#05x} ext={ext} error_frame={err} count={n}")
 
 
 def main() -> None:

@@ -87,6 +87,23 @@ def find_port(explicit: str = None) -> str:
              "  --port COM10 のように明示してください。")
 
 
+def open_without_reset(port: str) -> "serial.Serial":
+    """DTR / RTS を下げたままポートを開く。
+
+    pyserial は既定で開いた瞬間に DTR / RTS を有効にする。LCD-2.1 は CH343 の RTS が EN（リセット）に
+    つながる自動書き込み回路なので、普通に開くと本体がリセットされ、起動直後の数秒（オープニング中の
+    受信の溜まり・最初の全面描画）が採点に混ざっていた（2026-10-05）。
+    """
+    ser = serial.Serial()
+    ser.port = port
+    ser.baudrate = 115200
+    ser.timeout = 0.5
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    return ser
+
+
 def reset_board(port: str) -> None:
     """CH343 の RTS で EN を引いて本体をリセットする（LCD-2.1 の自動書き込み回路を使う）。"""
     try:
@@ -201,7 +218,7 @@ def main() -> None:
         ser = None
         for _ in range(10):
             try:
-                ser = serial.Serial(port, 115200, timeout=0.5)
+                ser = open_without_reset(port)
                 break
             except Exception:
                 time.sleep(1.2)
@@ -274,16 +291,29 @@ def main() -> None:
             lo, hi = 900, 1400
         c.add("受信レート", all(lo <= f <= hi for f in fps), f"{min(fps)} - {max(fps)} f/s")
         c.add("信号喪失の誤検出 (RSK-01)", none_rows == 0, f"{none_rows} 行 / {len(rows)} 行")
-    c.add("不明 ID / DLC 不正", all(r["unk"] == 0 and r["dlc"] == 0 for r in rows)
-          if args.mode != "invalid" else True,
-          f"unk={max(r['unk'] for r in rows)} dlc={max(r['dlc'] for r in rows)}")
-    c.add("受信キュー溢れ (SYS-06)", all(r["ovf"] == 0 for r in rows),
-          f"ovf={max(r['ovf'] for r in rows)}")
+    # 本体のカウンタは起動からの累積。本体をリセットせずに続けて試験すると前の試験の分が残るので、
+    # この試験の間の増分で判定する（2026-10-05: 無効値試験の直後の途絶試験で誤判定した）
+    def delta(key):
+        return rows[-1][key] - rows[0][key]
+
+    c.add("不明 ID / DLC 不正", (delta("unk") == 0 and delta("dlc") == 0) if args.mode != "invalid" else True,
+          f"この試験の増分 unk={delta('unk')} dlc={delta('dlc')}")
+    c.add("受信キュー溢れ (SYS-06)", delta("ovf") == 0, f"この試験の増分 ovf={delta('ovf')}")
     c.add("TWAI エラーカウンタ", all(r["tec"] == 0 and r["rec"] == 0 for r in rows),
           f"tec={max(r['tec'] for r in rows)} rec={max(r['rec'] for r in rows)}")
     if snaps:
         c.add("スナップショット取得失敗", max(snaps) == 0, f"snapFail={max(snaps)}")
-    if ages:
+    if args.mode == "dropout":
+        # IT-02: 送信を止めている間に必ず Lost（"--"）になり、古い値を出さないこと。再開で復帰すること
+        lost_ages = [r["ageL"] for r in rows if r["lam"] is None and r["ageL"] is not None]
+        c.add("途絶で信号喪失になる (IT-02 / RSK-01)", none_rows > 0 and all(a >= 2000 for a in lost_ages),
+              f"喪失 {none_rows} 行、喪失時の ageL 最小 {min(lost_ages) if lost_ages else '-'} ms（2000 以上で正）")
+        c.add("再開で復帰する", any(r["lam"] is not None for r in rows[-8:]), "末尾 8 行に受信値あり")
+    elif args.mode == "invalid":
+        # UT-09 の実機確認: λ=0 / EGT=0 は採用しない（ずっと Lost）。DLC 不足は破棄して数える
+        c.add("無効値を採用しない (SYS-42 / RSK-09)", none_rows == len(rows), f"喪失 {none_rows} 行 / {len(rows)} 行")
+        c.add("DLC 不足を破棄して数える (SWR-06)", delta("dlc") > 0, f"この試験の増分 dlc={delta('dlc')}")
+    elif ages:
         c.add("信号の鮮度", max(ages) < 500, f"ageL 最大 {max(ages)} ms")
     if draws:
         worst_fps = 1000000 // max(draws)
