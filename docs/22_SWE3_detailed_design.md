@@ -5,7 +5,7 @@
 | 文書ID | `DOC-22` |
 | プロセス | SWE.3 詳細設計・ユニット構築（テーラリング: 公開 I/F 契約と状態遷移に限定） |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-02 |
+| 最終更新 | 2026-10-04 |
 
 ---
 
@@ -164,6 +164,7 @@ struct Config {
     uint8_t  brightness;       // 1 - 5, 既定 4
     bool     buzzerEnabled;    // 既定 true
     uint8_t  lastPage;         // 既定 0
+    uint8_t  dialStyle;        // 0 = リング（AEM 風）, 1 = 指針式 A（大森風）。SYS-21
     // CAN
     uint16_t canBaseId;        // 既定 0x200
     uint8_t  canBitrateKbps10; // 25/50/100 (=250/500/1000 kbps), 既定 50
@@ -175,6 +176,9 @@ Config   defaultConfig();
 bool     validate(const Config& c);   // 範囲チェック + 単調性チェック + CRC
 uint32_t computeCrc(const Config& c);
 ```
+
+`dialStyle` を追加したとき `kConfigVersion` を 1 から 2 に上げた（保存済みの設定は既定値に戻る。`SWR-81`）。
+範囲外の `dialStyle` は不正とする（`UT-13`）。
 
 **単調性チェック**: `zRichHeavy < zRich < zOptimal < zLean` かつ
 `ringLo < zRichHeavy` かつ `zLean < ringHi` を満たさない設定は不正とする（`UT-13`）。
@@ -340,6 +344,20 @@ public:
 | 計測 | flush 回数・画素数・時間、`lv_timer_handler` の時間を累積し、1 秒ごとに fps・1 フレームの描画/flush 時間・画素数を出す（`QT-03`） |
 | 起動 | `Board::begin()` の前に `backlight.pre_process.idle_off = 1` を立て、点灯は最初の描画後（`DOC-23 §7`） |
 | 更新周期 | UI は **40 Hz**（25 ms）で更新する。30 Hz のときは平均 29.4 fps だった（当時はゾーン境界でリング全体 = 全画面を無効化しており、その 1 フレームが 78 ms で 33 ms の予算を超えたため）。リングの無効化を分割（`DEC-08`）したうえで 40 Hz に上げ、平均 39 fps / 最小 35 fps になった。ゾーン境界や警告帯の点滅で 1 フレームが重くなっても 30 fps を割らない余裕を持たせる意図。LPF（`SWR-24`）は dt を受け取るので周期は自由 |
+
+### 8.3 `SWD-12` PageNeedle（指針式デザイン A、`lib/ui/`）
+
+`SYS-21` (b) / `SWR-49` の実装。`PageLambda`（リング）と同じ `IPage` で、起動時に両方を作り、`Config::dialStyle` に応じて
+片方だけを表示する（切替は `LV_OBJ_FLAG_HIDDEN`。CLAUDE.md 規則 5）。
+
+| 部品 | 実装 | 無効化 |
+|---|---|---|
+| 文字盤 `DialFace` | 1 つの描画イベントで、リム・5 色の色帯・目盛り・14.7 の三角・目盛り数字・銘板（`A/F` `AIR FUEL RATIO` `EGT`）を描く | 静的。EGT `DANGER` のときだけリムを赤で点滅させ、リムを 15° ごとに分割して無効化（`DEC-08`） |
+| 針 `Needle` | 中心から浮かせた二等辺三角形（半径 110 で幅 9 px、半径 224 で尖る）。`lv_draw_triangle` 1 枚（継ぎ目を作らない） | 旧位置と新位置の針を**長さ方向に 6 分割**し、各区間で旧・新の外接矩形の和を無効化する（`ring_geometry::needleSegmentBounds`、`UT-20`）。0.2° 未満の変化は無視 |
+| 主数値・EGT | `BigNumber`（B612 Mono Bold）。数字は等幅セル、`.` と `°` は数字セルの 0.62 / 0.70 倍 | 変わった桁のセルだけ（`SWD-10`） |
+
+値の取り出しと LPF（`SWR-24`）、`Fresh` / `Stale` / `Lost` の判定は `PageLambda` と共通の `DisplayFilter`（`lib/signal_model`、
+HW 非依存、`UT-21`）で行う。`Lost` で針を消し、復帰時は LPF を新しい値で初期化する（古い値から針が泳いでこない）。
 
 ## 9. アプリケーション起動シーケンス（`SWD-09`）
 

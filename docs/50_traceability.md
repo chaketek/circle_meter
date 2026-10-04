@@ -5,7 +5,7 @@
 | 文書ID | `DOC-50` |
 | プロセス | SYS.2/SYS.3/SWE.1/SWE.2 の双方向トレーサビリティ |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-02 |
+| 最終更新 | 2026-10-04 |
 
 ---
 
@@ -13,7 +13,7 @@
 
 | STK | SYS | SWR | SWA / SWD | 検証 |
 |---|---|---|---|---|
-| `STK-01` 周辺視野で判別 | `SYS-10`,`SYS-12`,`SYS-13` | `SWR-42`,`SWR-43`,`SWR-44` | `SWA-22`/`SWD-08` LambdaRing, `SWD-10` BigNumber | `UT-17`,`QT-03`,`QT-08` |
+| `STK-01` 周辺視野で判別 | `SYS-10`,`SYS-12`,`SYS-13`,`SYS-21` | `SWR-42`,`SWR-43`,`SWR-44`,`SWR-49`,`SWR-50` | `SWA-22`/`SWD-08` LambdaRing, `SWD-10` BigNumber, `SWD-12` PageNeedle | `UT-17`,`UT-20`,`UT-21`,`QT-02`,`QT-03`,`QT-08` |
 | `STK-02` 外周バー + 色変化 | `SYS-10`,`SYS-11`,`SYS-17` | `SWR-27`,`SWR-42` | `SWA-05` Units, `SWD-08` | `UT-05`,`QT-02` |
 | `STK-03` 排気温度監視・警告 | `SYS-04`,`SYS-15`,`SYS-16` | `SWR-08`,`SWR-28`,`SWR-46` | `SWA-03`,`SWA-05`,`SWA-22` | `UT-03`,`UT-07`,`QT-05` |
 | `STK-04` AFR / λ 切替 | `SYS-14`,`SYS-31` | `SWR-25`,`SWR-45` | `SWA-05`,`SWA-21` | `UT-06`,`IT-06` |
@@ -73,6 +73,8 @@
 | `UT-17` | `SWD-08`,`DEC-05`,`DEC-08`,`SYS-12` | 同上 |
 | `UT-18` | `SWR-100` | 同上 |
 | `UT-19` | `SYS-20`,`SWR-46`,`SWR-47` | 同上 |
+| `UT-20` | `DEC-10`,`SWR-49` | 同上 |
+| `UT-21` | `RSK-01`,`SWR-24`,`SWR-49` | 同上 |
 | `IT-01`-`IT-15` | `DOC-30 §3` 参照 | 実機手順 |
 | `QT-01`-`QT-11` | `DOC-30 §4` 参照 | 実機・実車手順 |
 
