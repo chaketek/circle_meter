@@ -193,7 +193,7 @@ M5Dial 版は実行時に候補を大きい順に試して自動選択してい�
 | 項目 | 仕様 |
 |---|---|
 | 構成 | 中央にロゴ、下部に `circle_meter` と FW 版数（`v0.1.0-3-gabc1234`） |
-| ロゴ形式 | `assets/logo_src.png` を `tools/make_logo.py` で RGB565 の C++ 配列に変換して保持する。M5Dial 版は `assets/logo.cpp`（204x87 px / 34.7 KB）。**LCD-2.1 版は `assets/lcd21/logo.cpp` / `logo.h`（390x167 px / 127 KB）**。生成: `python tools/make_logo.py --out-c assets/lcd21/logo.cpp --out-h assets/lcd21/logo.h --max-width 408 --max-height 174`（元画像の縦横比で 390x167 になる）。Flash 上の const 配列を LVGL の `lv_image_dsc_t`（RGB565）から直接参照し、RAM へコピーしない |
+| ロゴ形式 | `assets/logo_src.png` を `tools/make_logo.py` で RGB565 の C++ 配列に変換して保持する。M5Dial 版は `assets/logo.cpp`（204x87 px / 34.7 KB）。**LCD-2.1 版は `assets/lcd21/logo.cpp` / `logo.h`（394x167 px / 129 KB）**。生成: `python tools/make_logo.py --out-c assets/lcd21/logo.cpp --out-h assets/lcd21/logo.h --max-width 408 --max-height 174`（元画像の縦横比で 394x167 になる）。Flash 上の const 配列を LVGL の `lv_image_dsc_t`（RGB565）から直接参照し、RAM へコピーしない |
 | アニメーション | 0.0–0.8 s フェードイン → 1.6 s 保持 → 0.6 s フェードアウト（合計 3.0 s）。**バックライトの LEDC PWM（GPIO6）のランプで実現**する（画素のアルファ合成は 16 bit 階調では縞が出るうえ CPU を食う） |
 | 短縮条件 | フェードイン完了時点で CAN 受信済みなら保持を 1.6 s → 0.4 s に短縮する |
 | 差し替え | `assets/logo_src.png` を置き換えて `python tools/make_logo.py` を実行する |
@@ -207,8 +207,14 @@ M5Dial 版は実行時に候補を大きい順に試して自動選択してい�
 
 元素材は白背景に黒文字のロゴである。これをそのまま出すと黒基調の丸型画面に
 白い四角が浮いてしまい、原則 P3 に反する。そこで `tools/make_logo.py` は既定で
-**無彩色のみ明暗を反転し、有彩色（赤のスクリプト部）は色相を保つ**処理を行う。
-結果として「黒地に白抜きの MBW + 赤のスクリプト」になる。
+**白地の画素を「黒インク」と「色インク（スクリプトの赤）」の混合とみなして割合を求め、
+黒地の上で黒インク -> 白、色インク -> そのままの色として塗り直す**。
+結果として「黒地に白抜きの MBW + 赤のスクリプト」になる。色インクの色は彩度の高い画素の中央値から推定する
+（元画像では RGB 196 / 34 / 35）。
+
+> **履歴（2026-10-04）**: 当初は画素ごとに「有彩色なら残す / 無彩色なら反転」と切り替えていた。
+> この方式では赤字の縁の中間色（赤と白の間の薄いピンク）が反転されずに残り、黒地の上で明るい縁取りが
+> 浮いて POWER の縁がジャギーに見えた。混合比で塗り直す方式にして、縁が黒地へなめらかに溶けるようにした。
 
 元のまま（白背景）にしたい場合は `python tools/make_logo.py --no-invert` で再生成する。
 
