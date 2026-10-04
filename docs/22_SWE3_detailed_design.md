@@ -164,7 +164,7 @@ struct Config {
     uint8_t  brightness;       // 1 - 5, 既定 4
     bool     buzzerEnabled;    // 既定 true
     uint8_t  lastPage;         // 既定 0
-    uint8_t  dialStyle;        // 0 = リング（AEM 風）, 1 = 指針式 A（大森風）。SYS-21
+    uint8_t  dialStyle;        // 0 = リング（AEM 風）, 1 = 指針式 A（大森風）。SYS-21。既定 1
     // CAN
     uint16_t canBaseId;        // 既定 0x200
     uint8_t  canBitrateKbps10; // 25/50/100 (=250/500/1000 kbps), 既定 50

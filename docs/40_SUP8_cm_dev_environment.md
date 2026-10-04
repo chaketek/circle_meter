@@ -5,7 +5,7 @@
 | 文書ID | `DOC-40` |
 | プロセス | SUP.8 構成管理 / SUP.9 問題解決 / SUP.10 変更要求 / MAN.3 プロジェクト管理 / SPL.2 リリース |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-02 |
+| 最終更新 | 2026-10-04 |
 
 ---
 
@@ -131,7 +131,7 @@ ffmpeg -f dshow -video_size 1280x720 -i video="5MP USB Camera" -frames:v 1 -upda
 |---|---|---|
 | **native 単体テスト** | デコード・鮮度管理・単位換算のロジック検証 | `pio test -e native` |
 | **CAN シミュレータ（内蔵）** | 実機で UI の見た目と FPS を確認 | `pio run -e m5dial_sim -t upload`（λ・EGT をスイープ） |
-| **画面スイープデモ（LCD-2.1）** | 物理層なしで λ ゾーン・EGT 警告・fps を確認 | PowerShell で `pio run -e lcd21_sim -t upload`。λ が 0.68 <-> 1.36 を 8.5 秒で往復し、EGT は 5 °C 刻みで 300 <-> 960 °C。UART0 から 1 文字送って操作: `h` 停止/再開、`0`-`9` その位置で停止、`m` AFR/λ 切替。1 秒ごとにシリアルへ fps・描画時間・画素数を出す |
+| **画面スイープデモ（LCD-2.1）** | 物理層なしで λ ゾーン・EGT 警告・fps を確認 | PowerShell で `pio run -e lcd21_sim -t upload`。λ が 0.68 <-> 1.36 を 8.5 秒で往復し、EGT は 5 °C 刻みで 300 <-> 960 °C。UART0 から 1 文字送って操作: `h` 停止/再開、`0`-`9` その位置で停止、`m` AFR/λ 切替、`v` 表示デザイン切替（指針式 A <-> リング。`SYS-21`）。1 秒ごとにシリアルへ fps・描画時間・画素数を出す |
 | **PCAN からの送出** | ベンチで実バスを模擬（`IT-*` / `QT-*`） | `python tools/pcan_send.py --mode sweep`（要 PEAK ドライバ + `python-can`）。詳細は `DOC-30 §3` |
 
 `tools/replay/` の CSV 形式:

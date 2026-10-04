@@ -66,7 +66,7 @@ python -m platformio run -e lcd21_sim -t upload --upload-port COM10
 python -m platformio run -e lcd21 -t upload --upload-port COM10
 ```
 
-デモは UART0（115200）から 1 文字送って操作できる: `h` 停止/再開、`0`-`9` その位置で停止、`m` AFR/λ 切替。
+デモは UART0（115200）から 1 文字送って操作できる: `h` 停止/再開、`0`-`9` その位置で停止、`m` AFR/λ 切替、`v` 表示デザイン切替（指針式 A <-> リング）。
 1 秒ごとにシリアルへ fps・1 フレームの描画/flush 時間・画素数が出る。`m5dial` / `m5dial_sim` は M5Dial 用なので、LCD-2.1 には書き込まない。
 
 PowerShell からは `tools/test.ps1` / `tools/build.ps1` / `tools/flash.ps1` /
@@ -85,7 +85,7 @@ PowerShell からは `tools/test.ps1` / `tools/build.ps1` / `tools/flash.ps1` /
 | `lib/rusefi_can/` | CAN フレームのデコード（純粋関数） | HW 非依存・状態を持たない |
 | `lib/signal_model/` | 信号ストア・単位換算・設定・ボタン FSM・リング幾何・スイープ生成・表示ポリシー | HW 非依存 |
 | `lib/hal/` | TWAI・CAN 受信タスク・表示/タッチ（`display_hal`）・入力・NVS・診断 | ESP32 依存。`display_hal_lcd21.cpp` は `CM_BOARD_LCD21` のときだけ有効 |
-| `lib/ui/` | LVGL ポート・ページ・ウィジェット（`LambdaRing` / `BigNumber`）・テーマ | LVGL 依存。**表示を変えるときは差分無効化を保つ**（`DEC-08`。全面再描画は 78 ms） |
+| `lib/ui/` | LVGL ポート・ページ（リング `PageLambda` / 指針式 A `PageNeedle`）・ウィジェット（`LambdaRing` / `BigNumber` / `DialFace` / `Needle`）・テーマ | LVGL 依存。**表示を変えるときは差分無効化を保つ**（`DEC-08`。全面再描画は 78 ms） |
 | `src/main.cpp` | 起動シーケンスとタスク生成 | |
 | `test/` | native 単体テスト | |
 
