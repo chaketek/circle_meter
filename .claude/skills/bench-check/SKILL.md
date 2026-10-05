@@ -14,6 +14,7 @@ PCAN から rusEFI の CAN フレームを模擬送出し、本体のシリア�
 
 - PCAN-USB が PC に接続され、CAN_H / CAN_L / GND が CAN Unit（Mini CAN）に配線されている
 - CAN Unit の Grove が本体の 12PIN に配線されている: GND-GND、5V-VBus、TX-D+ (GPIO20)、RX-D- (GPIO19)
+  （本体側ケーブルの線色。現在の個体限定: 黒 GND / 赤 5V / 黄 CAN TX / 緑 CAN RX。Grove 側の RX は白）
   （`README.md` の配線表。**ベンチでは CAN Unit の端子台に 12V を入れない**: 本体の USB 給電と 5V がぶつかる）
 - 本体は **CH343 の UART Type-C** で PC に接続（`COM10`、VID 1A86）。**ネイティブ USB-C は挿さない**（`RSK-13`）
 - **実 CAN 版**のファームウェア（`lcd21`）が書き込まれている

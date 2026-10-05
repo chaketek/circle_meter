@@ -109,12 +109,17 @@ Wiki の 12PIN 割当表と一致する。
 
 #### 配線
 
-| Grove（Mini CAN） | 12PIN | ファームウェア設定 |
-|---|---|---|
-| 黒 GND | GND | — |
-| 赤 5V（出力） | **VBus** | — |
-| 黄 CAN_TX | **D+ (GPIO20)** | `CM_TWAI_TX_GPIO=20` |
-| 白 CAN_RX | **D− (GPIO19)** | `CM_TWAI_RX_GPIO=19` |
+| Grove（Mini CAN） | 12PIN | **本体側ケーブルの線色** | ファームウェア設定 |
+|---|---|---|---|
+| 黒 GND | GND | **黒** | — |
+| 赤 5V（出力） | **VBus** | **赤**（VCC 5V） | — |
+| 黄 CAN_TX | **D+ (GPIO20)** | **黄**（CAN TX） | `CM_TWAI_TX_GPIO=20` |
+| 白 CAN_RX | **D− (GPIO19)** | **緑**（CAN RX） | `CM_TWAI_RX_GPIO=19` |
+
+> **本体側ケーブルの線色は、現在使用中の Waveshare ESP32-S3-Touch-LCD-2.1 の個体に付属の 12PIN ケーブルで確認したもの**
+> （2026-10-05、ユーザー確認。ベンチで CAN 通信できた配線）。Waveshare の資料には線色の記載が無く、別のロット・
+> 2.1B・ケーブルの付け替えでは色が違う可能性がある。別の個体では**色ではなく 12PIN の信号名で配線を確かめる**こと。
+> Grove 側の白（RX）と本体側の緑（RX）のように、両端で同じ信号の色が違う点に注意。
 
 ESP32-S3 の TWAI は GPIO マトリクス経由なので、どの GPIO でも割り当てられる
 （`SOC_GPIO_VALID_OUTPUT_GPIO_MASK == SOC_GPIO_VALID_GPIO_MASK`、S3 に入力専用ピンは無い）。

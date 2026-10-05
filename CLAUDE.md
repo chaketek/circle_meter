@@ -132,5 +132,6 @@ LCD は外付けの UVC カメラ（`5MP USB Camera`）で撮影できる構成�
 ## 実機の接続（LCD-2.1）
 
 - 書き込み・ログは **CH343P の UART Type-C**（`COM10`）。ネイティブ USB-C にはケーブルを挿さない（CAN と競合: `RSK-13`）
+- CAN Unit との配線（**本体側ケーブルの線色。現在使用中の個体限定**）: 黄 = CAN TX（D+ / GPIO20）、緑 = CAN RX（D− / GPIO19）、赤 = VCC 5V（VBus）、黒 = GND。Grove 側は黄 = TX、白 = RX。別の個体では色ではなく 12PIN の信号名で確かめる（`DOC-12 §3.1`）
 - PlatformIO の esptool を直接呼ぶときは `~/.platformio/penv/Scripts/python.exe` から（システムの Python だと `click` で落ちる）
 - スクラッチファイルは指定のスクラッチパッドに置く（Git Bash の `/tmp` と Python の `/tmp` は別の場所を指す）
