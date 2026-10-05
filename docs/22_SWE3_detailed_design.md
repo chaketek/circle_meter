@@ -5,7 +5,7 @@
 | 文書ID | `DOC-22` |
 | プロセス | SWE.3 詳細設計・ユニット構築（テーラリング: 公開 I/F 契約と状態遷移に限定） |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-04 |
+| 最終更新 | 2026-10-05 |
 
 ---
 
@@ -358,6 +358,31 @@ public:
 
 値の取り出しと LPF（`SWR-24`）、`Fresh` / `Stale` / `Lost` の判定は `PageLambda` と共通の `DisplayFilter`（`lib/signal_model`、
 HW 非依存、`UT-21`）で行う。`Lost` で針を消し、復帰時は LPF を新しい値で初期化する（古い値から針が泳いでこない）。
+
+### 8.4 `SWD-13` λ センサの状態（`lib/signal_model/lambda_sensor_state.h`）
+
+`SWR-29` の判定。HW / LVGL 非依存の純粋関数で、`DisplayFilter` が毎フレーム呼ぶ（`UT-23`）。
+
+```cpp
+enum class LambdaSensorState : uint8_t {
+    Ok, NoSignal, SensorOff, WarmingUp, Check, FaultNoHeat, FaultOverheat, FaultUnderheat
+};
+struct LambdaSensorInfo { LambdaSensorState state; bool hasTemp; float tempC; };
+LambdaSensorInfo classifyLambdaSensor(const Snapshot& snap);
+```
+
+| 優先 | 条件 | 状態 |
+|---|---|---|
+| 1 | `Lambda1Valid`（`0x207` を受けるたびに 0 / 1 で更新）が `Lost` | `NoSignal` |
+| 2 | `Lambda1Valid` = 1 かつ `Lambda1` が `Lost` でない | `Ok` |
+| 3 | `WboStatus` が `Lost` でない | 0 -> `SensorOff`、1 -> `WarmingUp`、2 -> `Check`、3 / 4 / 5 -> `FaultNoHeat` / `FaultOverheat` / `FaultUnderheat`。`WboTempC` があれば温度つき |
+| 4 | `StatusFlags` の O2 ヒータ許可ビット | ON -> `WarmingUp`（温度なし）、OFF -> `SensorOff` |
+
+追加した `SignalId`（NVS 互換のため `COUNT` の直前に追加）: `Lambda1Valid`、`WboValid`、`WboTempC`、`WboStatus`。
+`DisplayFilter` は `Lambda1Valid` が 0 のとき、`Lambda1` が `Stale` の範囲（2 秒未満）でも λ を無効とする（`SWR-29`）。
+
+デコードは `rusefi::decodeWboFrame(id, data, dlc)`（`SWD-01` と同じく純粋関数、`UT-22`）。`0x207` のデコードは
+`Lambda1Valid` も出すように拡張した（λ < 0.30 で 0）。
 
 ## 9. アプリケーション起動シーケンス（`SWD-09`）
 

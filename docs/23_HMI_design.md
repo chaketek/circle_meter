@@ -5,7 +5,7 @@
 | 文書ID | `DOC-23` |
 | プロセス | SWE.2（ユーザインタフェース設計） |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-04 |
+| 最終更新 | 2026-10-05 |
 
 ---
 
@@ -218,6 +218,23 @@ M5Dial 版は実行時に候補を大きい順に試して自動選択してい�
 | `BUS_ERROR` | `CAN ERROR (n)` n = 復旧試行回数 | `#FF2D2D` |
 | CEL 点灯 | 左下に `CEL` チップ | `#FFC400` |
 | λ プロテクト作動 | 右下に `LAMBDA PROT` チップ | `#FF2D2D` |
+
+### 6.1 λ センサの状態（`SYS-22` / `SWR-51`）
+
+CAN は受信しているが λ が無効のとき、`NO SIGNAL` の代わりに次を出す。リングの塗り・針・主数値（`--`）は出さない。
+位置は `NO SIGNAL` と同じ（リング: (240, 404) / 指針式 A: (240, 362)）。
+
+| 状態 | 表示 | 色 | いつ |
+|---|---|---|---|
+| `SensorOff` | `SENSOR OFF` | `#8A8A8A` | エンジン停止中（ヒータ許可なし。WBO は `Preheat`） |
+| `WarmingUp` | `WARMING UP 520°C`（WBO の温度があるとき）/ `WARMING UP` | `#FFC400` | 加熱中 |
+| `Check` | `SENSOR CHECK 780°C` | `#FFC400` | WBO は正常（閉ループ）だが λ が無効（ネルンスト電圧が範囲外など） |
+| `FaultNoHeat` | `SENSOR FAULT: NO HEAT` | `#FF2D2D` | WBO が「加熱しない」 |
+| `FaultOverheat` | `SENSOR FAULT: OVERHEAT` | `#FF2D2D` | 過熱 |
+| `FaultUnderheat` | `SENSOR FAULT: UNDERHEAT` | `#FF2D2D` | 温度不足 |
+| `NoSignal` | `NO SIGNAL` | `#FF2D2D` | `0x207` が 2 秒届いていない（通信異常） |
+
+> 文言は英大文字（§9 の方針）。温度は整数 °C。最長の `SENSOR FAULT: UNDERHEAT`（23 文字）が両デザインの位置で円に収まる。
 
 ## 7. オープニング画面（`SYS-18`, `SWR-48`）
 

@@ -5,7 +5,7 @@
 | 文書ID | `DOC-13` |
 | プロセス | SYS.3（外部インタフェース定義） |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-09-21 |
+| 最終更新 | 2026-10-05 |
 | 一次情報源 | rusEFI `firmware/controllers/can/can_verbose.cpp` および `rusEFI_CAN_verbose.dbc`（master, 2026-09 時点） |
 
 ---
@@ -41,6 +41,20 @@
 | BASE+10 | `0x20A` | PerCylinderKnock | 気筒別ノック | 未使用 |
 | BASE+11 | `0x20B` | Status11 | ブレーキペダル | 未使用 |
 
+### 2.1 ワイドバンドコントローラ（rusEFI WBO）のフレーム
+
+rusEFI の ECU とは別に、**ワイドバンドコントローラ（rusEFI WBO）自身が**同じ CAN バスへ送るフレーム。
+uaEFI の基板に内蔵されている WBO もこの形式で送る（外部バスに出ているかは `OPN-19`）。
+λ センサのウォームアップ・故障の表示に使う（`SYS-22`）。λ の値そのものは ECU の `0x207` を使う。
+
+| ID | 名前 | 内容 | 周期 |
+|---|---|---|---|
+| `0x190 + 2n` | StandardData | 版数・λ 有効フラグ・λ・**センサ温度** | 10 ms |
+| `0x191 + 2n` | DiagData | 内部抵抗・ネルンスト電圧・ポンプ出力・**状態**・ヒータ出力 | 10 ms |
+
+`n` は WBO の CAN インデックス（既定 0。WBO 側の `CanIndexOffset` + チャンネル番号）。**標準 11 bit ID**。
+一次情報: `rusefi/wideband` の `for_rusefi/wideband_can.h` と `firmware/can.cpp`（コミット `ca2adce4`、2026-04-10）。
+
 ## 3. 主要フレーム詳細
 
 ### 3.1 `0x207` Fueling3 — λ（主表示・必須）
@@ -58,6 +72,13 @@
 
 **無効値の扱い**: rusEFI は `Sensor::getOrZero()` を用いるため、センサ未構成・未ウォームアップ時は **0** が送られる。
 `λ < 0.30` を無効値として扱い、表示を `--` とする（`SYS-42`）。実用上 λ が 0.30 を下回ることはない。
+
+### 3.1.1 λ が無効なときの値
+
+rusEFI は `0x207` の λ に `Sensor::getOrZero(SensorType::Lambda1)` を入れる（`can_verbose.cpp`）。
+センサが無効のとき（ウォームアップ中・未構成・故障）は **λ = 0** が送られ、理由は区別されない。
+本機は λ = 0 のフレームを「**λ が無効であることを ECU が伝えている**」と扱う（`SWR-29`）。
+フレームが届いていない（`NO SIGNAL`）こととは区別する。
 
 ### 3.2 `0x209` Egts — 排気温度（主表示・必須）
 
@@ -119,12 +140,38 @@ EGT[°C] = data[0] × 5
 | MainRelayAct | 4 | bit 1 | bool | メインリレー |
 | FuelPumpAct | 4 | bit 2 | bool | 燃料ポンプ |
 | CELAct | 4 | bit 3 | bool | **チェックエンジン灯** |
-| EGOHeatAct | 4 | bit 4 | bool | O2 ヒータ |
+| EGOHeatAct | 4 | bit 4 | bool | O2 ヒータ許可。`heaterControlEnabled = forceO2Heating \|\| エンジン回転中`（`engine.cpp`）。**λ が無効のとき、ON なら加熱中、OFF ならセンサ停止中と判定する**（`SWR-29`） |
 | LambdaProtectAct | 4 | bit 5 | bool | **λ プロテクト作動** |
 | Fan | 4 | bit 6 | bool | ファン 1 |
 | Fan2 | 4 | bit 7 | bool | ファン 2 |
 | CurrentGear | 5 | 40\|8 | uint8 | 検出ギア |
 | DistanceTraveled | 6–7 | 48\|16 | uint16 LE | 0.1 km 単位 |
+
+### 3.7 `0x190 + 2n` / `0x191 + 2n` — rusEFI WBO（`SYS-22`）
+
+**StandardData（`0x190 + 2n`、DLC 8）**
+
+| 信号 | バイト | 型 | スケール | 単位 | 意味 |
+|---|---|---|---|---|---|
+| Version | 0 | uint8 | — | — | プロトコル版数。**`0xA0` 以外のフレームは捨てる**（形式が変わっている可能性があるため） |
+| Valid | 1 | uint8 | — | — | 1 = λ 有効（ヒータが閉ループ、かつネルンスト電圧が目標 ±0.1 V、かつ λ > 0.6） |
+| Lambda | 2–3 | uint16 LE | 0.0001 | λ | 無効なら 0。本機は表示に使わない（ECU の `0x207` を使う） |
+| TemperatureC | 4–5 | uint16 LE | 1 | °C | **センサ温度**（内部抵抗からの推定） |
+| （予約） | 6–7 | — | — | — | — |
+
+**DiagData（`0x191 + 2n`、DLC 8）**
+
+| 信号 | バイト | 型 | スケール | 単位 | 意味 |
+|---|---|---|---|---|---|
+| Esr | 0–1 | uint16 LE | 1 | Ω | センサ内部抵抗 |
+| NernstDc | 2–3 | uint16 LE | 0.001 | V | ネルンストセル電圧 |
+| PumpDuty | 4 | uint8 | 1/255 | — | ポンプ電流の出力 |
+| **Status** | 5 | uint8 | — | — | **0 = Preheat（加熱許可待ち）/ 1 = Warmup（加熱中）/ 2 = RunningClosedLoop（正常）/ 3 = SensorDidntHeat（加熱しない）/ 4 = SensorOverheat（過熱）/ 5 = SensorUnderheat（温度不足）** |
+| HeaterDuty | 6 | uint8 | 1/255 | — | ヒータ出力 |
+| （予約） | 7 | — | — | — | — |
+
+WBO は目標温度（センサ種別ごとの設定。LSU 4.9 で 780 °C 前後）の 30 °C 手前で `Warmup` から `RunningClosedLoop` に移る。
+**目標温度は CAN では送られない**ため、本機はウォームアップの進み具合ではなく現在の温度を表示する。
 
 ## 4. タイミング
 
@@ -134,6 +181,8 @@ EGT[°C] = data[0] × 5
 | 想定周期 | **50 ms (20 Hz)** | rusEFI の一般的な既定値。`OPN-03` で実設定を確認 |
 | 1 周期あたりの送信フレーム数 | 12 フレーム（BASE+0 〜 BASE+11） | `sendCanVerbose()` |
 | バス占有率（概算） | 12 frames × (約 108 bit + スタッフ) ÷ 50 ms ÷ 500 kbps ≒ **5.2 %** | — |
+| WBO の送信周期 | **10 ms**（2 フレーム / チャンネル） | `wideband_can.h: WBO_TX_PERIOD_MS` |
+| WBO の分のバス占有率（概算） | 2 frames × 約 130 bit ÷ 10 ms ÷ 500 kbps ≒ **5.2 %**（1 チャンネル） | — |
 | 鮮度切れ判定 | **500 ms**（想定周期の 10 倍） | `SYS-40` |
 | 信号喪失判定 | **2000 ms** | `SYS-41` |
 
@@ -154,6 +203,7 @@ EGT[°C] = data[0] × 5
 | `canBroadcastUseChannel` | 本機を接続するチャンネル | 同上 |
 | `Lambda1` センサ | ワイドバンドコントローラから構成済み | TunerStudio ゲージで値が出ること |
 | `EGT1` センサ | EGT アンプ（MAX31855 / CAN-EGT 等）から構成済み | 同上 |
+| WBO の CAN インデックス | **0**（`0x190` / `0x191`）。uaEFI 内蔵の WBO を前提 | WBO のフレームがバスに出ていること（`OPN-19`） |
 
 ## 6. 代替インタフェース（フォールバック）
 
