@@ -227,7 +227,8 @@ void printBanner() {
 #ifdef CM_ENABLE_CAN_SIM
     Serial.println("signal source: SIMULATOR (sweep)");
 #else
-    Serial.printf("signal source: CAN TX=GPIO%d RX=GPIO%d\n", CM_TWAI_TX_GPIO, CM_TWAI_RX_GPIO);
+    Serial.printf("signal source: CAN TX=GPIO%d RX=GPIO%d %u kbps\n", CM_TWAI_TX_GPIO, CM_TWAI_RX_GPIO,
+                  static_cast<unsigned>(g_cfg.canBitrateKbps));
 #endif
 }
 
@@ -237,6 +238,11 @@ void setup() {
     Serial.begin(115200);
     delay(100);
     g_cfg = defaultConfig();
+#ifdef CM_CAN_BITRATE_KBPS
+    // SYS-01 のビットレート設定。設定メニューと NVS（SWR-65）ができるまではビルド時に与える。
+    // 作者の車両（MoTeC 併用）のバスは 1 Mbps だった（2026-10-05 実測。DOC-13 §1、env:lcd21_1m）
+    g_cfg.canBitrateKbps = CM_CAN_BITRATE_KBPS;
+#endif
     printBanner();
 
     // バックライト OFF のまま初期化する（DOC-23 §7）

@@ -5,7 +5,7 @@
 | 文書ID | `DOC-40` |
 | プロセス | SUP.8 構成管理 / SUP.9 問題解決 / SUP.10 変更要求 / MAN.3 プロジェクト管理 / SPL.2 リリース |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-04 |
+| 最終更新 | 2026-10-05 |
 
 ---
 
@@ -82,7 +82,7 @@ pio test -e native         # ドメイン層の単体テスト（PC 上で実行
 | 項目 | 値 |
 |---|---|
 | ボード | **Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B**（ESP32-S3R8） |
-| PlatformIO board | `boards/waveshare_lcd21.json`（自作）。**環境は 3 つ**: `lcd21`（実 CAN。GPIO20 TX / GPIO19 RX）、`lcd21_sim`（CAN の代わりに λ / EGT をスイープ）、`lcd21_bringup`（計測専用）。**プラットフォームは pioarduino 55.03.312-1**（`OPN-15`: TWAI の実機動作とサプライチェーン確認が残り）。**Git Bash では `idf_tools.py` が `MSys/Mingw is not supported` で失敗するので PowerShell から実行する**。初回に `~/.platformio/penv` が Python 3.13 の venv に作り直される（システムの `python -m platformio` と `m5dial` 環境は影響を受けない）。最適化は **-O2**（Arduino-ESP32 既定の -Os を外す。描画が CPU 律速のため） |
+| PlatformIO board | `boards/waveshare_lcd21.json`（自作）。**環境は 4 つ**: `lcd21`（実 CAN。GPIO20 TX / GPIO19 RX、500 kbps）、`lcd21_1m`（`lcd21` の CAN を 1 Mbps にしたもの。作者の車両用。DOC-13 §1）、`lcd21_sim`（CAN の代わりに λ / EGT をスイープ）、`lcd21_bringup`（計測専用）。**プラットフォームは pioarduino 55.03.312-1**（`OPN-15`: TWAI の実機動作とサプライチェーン確認が残り）。**Git Bash では `idf_tools.py` が `MSys/Mingw is not supported` で失敗するので PowerShell から実行する**。初回に `~/.platformio/penv` が Python 3.13 の venv に作り直される（システムの `python -m platformio` と `m5dial` 環境は影響を受けない）。最適化は **-O2**（Arduino-ESP32 既定の -Os を外す。描画が CPU 律速のため） |
 | framework | `arduino` |
 | Flash | **16 MB**, QIO, 80 MHz |
 | PSRAM | **8 MB Octal**（実機の esptool 応答で確認済み）。`memory_type = qio_opi`（Flash は Quad、PSRAM は Octal） |

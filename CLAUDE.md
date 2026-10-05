@@ -60,10 +60,14 @@ pio run -e m5dial -t upload
 python -m platformio run -e lcd21_sim -t upload --upload-port COM10
 ```
 
-実 CAN 版（物理層を繋いでから。`OPN-13` は実機未確認）:
+実 CAN 版（物理層を繋いでから）。**ビットレートは車両で違う**（`DOC-13 §1`）: `lcd21` = 500 kbps（rusEFI 既定。uaEFI 単独の送付先の車両）、`lcd21_1m` = 1 Mbps（作者の NA8。MoTeC 併用）:
 
 ```powershell
 python -m platformio run -e lcd21 -t upload --upload-port COM10
+```
+
+```powershell
+python -m platformio run -e lcd21_1m -t upload --upload-port COM10
 ```
 
 デモは UART0（115200）から 1 文字送って操作できる: `h` 停止/再開、`0`-`9` その位置で停止、`m` AFR/λ 切替、`v` 表示デザイン切替（指針式 A <-> リング）。
