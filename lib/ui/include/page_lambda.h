@@ -30,7 +30,8 @@ private:
     lv_obj_t* m_unit      = nullptr;
     BigNumber m_mainNum;
     BigNumber m_egtNum;
-    lv_obj_t* m_status = nullptr;
+    lv_obj_t* m_status = nullptr;  // 下部: 診断文字列
+    lv_obj_t* m_sensor = nullptr;  // 中央: λ センサの状態（SWR-51）
     LambdaRing m_ring;
 
     bool m_showAfr = true;
@@ -44,6 +45,8 @@ private:
     char m_lastUnit[8]{};
     char m_lastStatus[32]{};
     uint32_t m_lastStatusColor = 0xFFFFFFFF;
+    char m_lastSensor[32]{};
+    uint32_t m_lastSensorColor = 0xFFFFFFFF;
 };
 
 }  // namespace cm::ui

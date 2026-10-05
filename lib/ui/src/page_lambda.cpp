@@ -20,6 +20,8 @@ constexpr int kMainWidthAfr    = 320;
 constexpr int kMainWidthLambda = 328;
 constexpr int kEgtWidth        = 248;
 
+constexpr int kSensorY = 282;  // DOC-23 §6.1
+
 const char* freshnessText(Freshness f) {
     switch (f) {
         case Freshness::Fresh:
@@ -61,12 +63,15 @@ void PageLambda::onCreate(lv_obj_t* parent, const Config& cfg) {
     m_mainNum.create(m_root, m_showAfr ? &cm_font_afr : &cm_font_lambda,
                      m_showAfr ? kMainWidthAfr : kMainWidthLambda, layout::kMainY);
     m_egtNum.create(m_root, &cm_font_egt, kEgtWidth, layout::kEgtY);
-    m_status = makeLabel(m_root, &lv_font_montserrat_24, color::kTextSub, 340, layout::kStatusY);
+    m_status = makeLabel(m_root, &lv_font_montserrat_24, color::kTextSub, 240, layout::kStatusY);
+    // λ センサの状態は主数値と EGT の間（DOC-23 §6.1）。下部の空きに置くと、長い文字列がリングの端と重なる
+    m_sensor = makeLabel(m_root, &lv_font_montserrat_24, color::kDanger, 320, kSensorY);
 
     // LVGL のラベルは作成直後に "Text" と表示する。空の保持配列を参照させて消しておく
     lv_label_set_text_static(m_freshness, m_lastFreshness);
     lv_label_set_text_static(m_unit, m_lastUnit);
     lv_label_set_text_static(m_status, m_lastStatus);
+    lv_label_set_text_static(m_sensor, m_lastSensor);
 }
 
 void PageLambda::onShow() {
@@ -134,16 +139,17 @@ void PageLambda::onUpdate(const Snapshot& snap, const Config& cfg) {
     m_egtNum.setText(buf, egtColorHex(v, blinkOn));
     m_ring.setAlarm(egtAlarmOn(v, blinkOn));
 
-    // ---- 下端: λ が無効ならその理由（SWR-51: NO SIGNAL / 停止中 / 加熱中 / 故障）、なければ診断文字列
+    // ---- 中央: λ が無効ならその理由（SWR-51: NO SIGNAL / 停止中 / 加熱中 / 故障）
+    char st[32] = "";
     if (!v.hasLambda && v.sensor.state != LambdaSensorState::Ok) {
-        char st[32];
         formatSensorStatus(st, sizeof(st), v.sensor);
-        setText(m_status, m_lastStatus, sizeof(m_lastStatus), st);
-        setColor(m_status, &m_lastStatusColor, sensorStatusColorHex(v.sensor));
-    } else {
-        setText(m_status, m_lastStatus, sizeof(m_lastStatus), m_diag);
-        setColor(m_status, &m_lastStatusColor, color::kTextSub);
     }
+    setText(m_sensor, m_lastSensor, sizeof(m_lastSensor), st);
+    setColor(m_sensor, &m_lastSensorColor, sensorStatusColorHex(v.sensor));
+
+    // ---- 下端: 診断文字列
+    setText(m_status, m_lastStatus, sizeof(m_lastStatus), m_diag);
+    setColor(m_status, &m_lastStatusColor, color::kTextSub);
 }
 
 }  // namespace cm::ui

@@ -16,8 +16,9 @@ namespace {
 constexpr uint32_t kNeedleHex = 0xFF7014;
 constexpr int kMainY          = 226;
 constexpr int kEgtY           = 300;
-constexpr int kStatusY        = 362;
-constexpr int kDiagY          = 452;
+// λ センサの状態は主数値と EGT の間（DOC-23 §6.1）。以前の (240, 362) は左下の目盛り数字「10」と重なった
+constexpr int kStatusY = 262;
+constexpr int kDiagY   = 452;
 // BigNumber の幅は等幅セルの総幅以上（SWD-10）。B612 Mono 70 px の数字セルは 46 px:
 // λ "1.000" = 46 x 4 + 0.62 x 46 = 213 px。EGT 34 px の数字セルは 22 px: "960°C" = 22 x 4 + 0.70 x 22 = 103
 // px
@@ -56,7 +57,7 @@ void PageNeedle::onCreate(lv_obj_t* parent, const Config& cfg) {
     m_egtNum.create(m_root, &cm_font_b612_egt, kEgtWidth, kEgtY);
     m_egtNum.setCellScale(0xB0, kDegScale);  // '°'
 
-    m_status = makeLabel(m_root, &cm_font_b612_label, color::kDanger, 340, kStatusY);
+    m_status = makeLabel(m_root, &cm_font_b612_label, color::kDanger, 300, kStatusY);
     m_diag   = makeLabel(m_root, &cm_font_b612_small, 0x6A6A6A, 200, kDiagY);
     lv_label_set_text_static(m_status, m_lastStatus);  // 作成直後の "Text" を消す
     lv_label_set_text_static(m_diag, m_lastDiag);
