@@ -301,6 +301,22 @@ void test_UT22_wbo_standard_data() {
     TEST_ASSERT_EQUAL_FLOAT(1.0f, v);
     TEST_ASSERT_TRUE(find(r, SignalId::WboTempC, v));
     TEST_ASSERT_EQUAL_FLOAT(780.0f, v);
+    TEST_ASSERT_TRUE(find(r, SignalId::WboLambda, v));  // SYS-03: 表示に使う λ
+    TEST_ASSERT_FLOAT_WITHIN(1e-4f, 1.0f, v);
+}
+
+void test_UT22_wbo_invalid_lambda_not_reported() {
+    // Valid = 0 のとき WBO は λ = 0 を入れてくる。λ として採用しない
+    const uint8_t notValid[8] = {0xA0, 0x00, 0x00, 0x00, 0x0C, 0x02, 0x00, 0x00};
+    float v                   = 0.0f;
+    const DecodeResult r      = decodeWboFrame(0x190, notValid, 8);
+    TEST_ASSERT_TRUE(r.accepted);
+    TEST_ASSERT_FALSE(find(r, SignalId::WboLambda, v));
+    TEST_ASSERT_TRUE(find(r, SignalId::WboValid, v));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, v);
+    // Valid = 1 でも λ が範囲外（0）なら採用しない（SYS-42）
+    const uint8_t zero[8] = {0xA0, 0x01, 0x00, 0x00, 0x0C, 0x03, 0x00, 0x00};
+    TEST_ASSERT_FALSE(find(decodeWboFrame(0x190, zero, 8), SignalId::WboLambda, v));
 }
 
 void test_UT22_wbo_diag_status() {
@@ -355,6 +371,7 @@ int main(int, char**) {
     RUN_TEST(test_UT10_unused_frames_accepted_without_signals);
     RUN_TEST(test_UT22_wbo_standard_data);
     RUN_TEST(test_UT22_wbo_diag_status);
+    RUN_TEST(test_UT22_wbo_invalid_lambda_not_reported);
     RUN_TEST(test_UT22_wbo_rejects_bad_frames);
     RUN_TEST(test_UT22_fueling3_reports_lambda_validity);
     return UNITY_END();

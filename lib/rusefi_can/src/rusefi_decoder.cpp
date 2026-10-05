@@ -119,6 +119,12 @@ DecodeResult decodeWboFrame(uint32_t id, const uint8_t* data, uint8_t dlc, uint8
         r.accepted = true;
         push(r, SignalId::WboValid, (data[kWboOffValid] & 0x01u) ? 1.0f : 0.0f);
         push(r, SignalId::WboTempC, static_cast<float>(le16(data, kWboOffTempC)) * kWboTempScaleC);
+        // SYS-03 / DEC-11: λ は WBO から取る。Valid = 0 の λ は 0 が入っているだけなので採用しない（SYS-42
+        // の範囲も確かめる）
+        const float lambda = static_cast<float>(le16(data, kWboOffLambda)) * kLambdaScale;
+        if ((data[kWboOffValid] & 0x01u) != 0 && isLambdaValid(lambda)) {
+            push(r, SignalId::WboLambda, lambda);
+        }
     } else if (id == dataId + 1u) {
         // DiagData。Version を持たないので、状態の値の範囲だけ確かめる
         const uint8_t status = data[kWboOffStatus];

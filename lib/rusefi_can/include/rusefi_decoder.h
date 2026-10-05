@@ -35,7 +35,7 @@ struct DecodeResult {
 DecodeResult decodeFrame(uint32_t id, const uint8_t* data, uint8_t dlc, uint32_t baseId);
 
 /// rusEFI WBO の StandardData / DiagData をデコードする（SWR-11 / DOC-13 §3.7）。
-///   StandardData（0x190 + 2n）-> WboValid, WboTempC
+///   StandardData（0x190 + 2n）-> WboValid, WboTempC, WboLambda（Valid = 1 かつ isLambdaValid のときだけ）
 ///   DiagData    （0x191 + 2n）-> WboStatus
 /// Version が kWboVersion 以外、DLC が 8 未満、ID が範囲外なら accepted=false。
 /// @param wboIndex WBO の CAN インデックス n（既定 0）

@@ -166,7 +166,8 @@ def main() -> None:
     ap.add_argument("--flash", action="store_true", help="先にビルドして書き込む")
     ap.add_argument("--sim", action="store_true", help="--flash のとき CAN シミュレータ版を書き込む")
     ap.add_argument("--listen", action="store_true", help="IT-04: 送信せずバスを観測するだけ")
-    ap.add_argument("--expect-fps", type=float, default=120.0, help="期待する受信フレームレート")
+    ap.add_argument("--expect-fps", type=float, default=160.0,
+                    help="期待する受信フレームレート（ECU 6 + WBO 2 フレーム x 20 Hz）")
     args = ap.parse_args()
 
     if args.flash:
@@ -289,7 +290,7 @@ def main() -> None:
     if args.mode not in ("dropout", "invalid"):
         lo, hi = args.expect_fps * 0.9, args.expect_fps * 1.1
         if args.mode == "burst":
-            lo, hi = 900, 1400
+            lo, hi = 1300, 1900  # 8 フレーム x 200 Hz = 1600
         c.add("受信レート", all(lo <= f <= hi for f in fps), f"{min(fps)} - {max(fps)} f/s")
         c.add("信号喪失の誤検出 (RSK-01)", none_rows == 0, f"{none_rows} 行 / {len(rows)} 行")
     # 本体のカウンタは起動からの累積。本体をリセットせずに続けて試験すると前の試験の分が残るので、

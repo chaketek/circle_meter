@@ -82,6 +82,9 @@ void formatSensorStatus(char* buf, size_t size, const LambdaSensorInfo& info) {
         case LambdaSensorState::FaultUnderheat:
             std::snprintf(buf, size, "SENSOR FAULT: UNDERHEAT");
             break;
+        case LambdaSensorState::NoWbo:
+            std::snprintf(buf, size, "NO WBO DATA");
+            break;
         default:
             buf[0] = '\0';
             break;

@@ -18,7 +18,7 @@ DOC-30 の `IT-*` を実機で実行するための PC 側ハーネス（SWR-101
     python tools/pcan_send.py --mode invalid
     python tools/pcan_send.py --mode wbo-warmup   # IT-17: λ センサの停止 -> 加熱 -> 正常（rusEFI WBO のフレームつき）
     python tools/pcan_send.py --mode wbo-fault    # IT-17: 加熱中に WBO が故障（SensorDidntHeat）
-    python tools/pcan_send.py --mode ecu-warmup   # IT-17: WBO のフレームなし（ECU のヒータ許可ビットだけ）
+    python tools/pcan_send.py --mode ecu-warmup   # IT-17: WBO のフレームが届かない（NO WBO DATA になること）
     python tools/pcan_send.py --mode startup      # キーオン -> 加熱 -> 暖まったら実走模擬を繰り返す（デモ向け）
     python tools/pcan_send.py --mode replay --csv tools/replay/idle.csv
     python tools/pcan_send.py --listen 10        # IT-04: バス上の全フレームを観測
@@ -84,7 +84,7 @@ class Sample:
 
     def __init__(self, phase="", afr=STOICH, egt=500.0, rpm=850.0, speed=0.0, gear=0,
                  map_kpa=35.0, inj_duty=5.0, timing=15.0, clt=87.0, iat=32.0, fuel_cut=False,
-                 o2_heater=True, lam_invalid=False, wbo_status=None, wbo_temp=780.0):
+                 o2_heater=True, lam_invalid=False, wbo_status=2, wbo_temp=780.0):
         self.phase = phase
         self.afr = afr
         self.egt = egt
@@ -98,7 +98,8 @@ class Sample:
         self.iat = iat
         self.fuel_cut = fuel_cut
         # SYS-22 / IT-17: λ センサの状態。lam_invalid なら 0x207 に λ = 0 を送る（rusEFI の getOrZero と同じ）。
-        # wbo_status が None でなければ rusEFI WBO のフレーム（0x190 / 0x191）も送る
+        # SYS-03: 本機は λ を WBO から取るので、既定で rusEFI WBO のフレーム（0x190 / 0x191）も送る（状態 2 = 正常）。
+        # wbo_status=None は「WBO のフレームが届かない」状況の再現（NO WBO DATA）
         self.o2_heater = o2_heater
         self.lam_invalid = lam_invalid
         self.wbo_status = wbo_status
@@ -304,12 +305,8 @@ def warmup_sample(mode: str, t: float) -> Sample:
     """IT-17: λ センサのウォームアップを 30 秒周期で再現する。"""
     t = t % 30.0
     if mode == "ecu-warmup":
-        # WBO のフレームなし。ECU のヒータ許可ビットと λ = 0 だけで判定させる（OPN-19 の代替経路）
-        if t < 4.0:
-            return Sample("ENGINE OFF", rpm=0.0, o2_heater=False, lam_invalid=True)
-        if t < 14.0:
-            return Sample("WARMUP", rpm=850.0, o2_heater=True, lam_invalid=True)
-        return Sample("IDLE", rpm=850.0)
+        # WBO のフレームが届かない（OPN-19 で外部バスに出ていない場合）。SYS-03 以降は λ を出せず NO WBO DATA になる
+        return Sample("NO WBO", rpm=850.0, wbo_status=None)
     if mode == "wbo-fault":
         if t < 4.0:
             return Sample("PREHEAT", rpm=0.0, o2_heater=False, lam_invalid=True, wbo_status=0, wbo_temp=25.0)
@@ -502,7 +499,10 @@ def main() -> None:
                     # DLC 不足フレーム（破棄され badDlc が増えること）
                     bus.send(can.Message(arbitration_id=base + OFF_SPEEDS, data=bytes(4),
                                          is_extended_id=args.extended))
-                    sent += 3
+                    # SYS-03 以降の λ の経路: WBO が Valid = 1 なのに λ = 0（範囲外）を送る -> 採用しないこと
+                    bus.send(can.Message(arbitration_id=WBO_BASE,
+                                         data=struct.pack("<BBHHH", WBO_VERSION, 1, 0, 780, 0), is_extended_id=False))
+                    sent += 4
                 else:
                     if args.mode == "drive":
                         last_sample = drive.sample(t, period * 1000.0)

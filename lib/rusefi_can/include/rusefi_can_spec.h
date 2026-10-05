@@ -67,6 +67,7 @@ constexpr uint8_t kWboVersion     = 0xA0;   ///< RUSEFI_WIDEBAND_VERSION。異�
 constexpr float kWboTempScaleC    = 1.0f;   ///< TemperatureC: uint16 LE, 1 degC/LSB
 constexpr uint8_t kWboOffVersion  = 0;      ///< StandardData の Version
 constexpr uint8_t kWboOffValid    = 1;      ///< StandardData の Valid
+constexpr uint8_t kWboOffLambda   = 2;      ///< StandardData の Lambda（uint16 LE, kLambdaScale）
 constexpr uint8_t kWboOffTempC    = 4;      ///< StandardData の TemperatureC
 constexpr uint8_t kWboOffStatus   = 5;      ///< DiagData の Status
 

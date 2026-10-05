@@ -50,15 +50,15 @@ public:
 
         DisplayValues v;
         float lambda = 0.0f;
-        v.hasLambda  = snap.get(SignalId::Lambda1, lambda);  // Lost なら false（RSK-01）
-        // SWR-29: ECU が λ = 0（無効）を送ってきたら、2 秒の喪失判定を待たずにその場で無効にする。
+        v.hasLambda  = snap.get(SignalId::WboLambda, lambda);  // SYS-03: λ は WBO。Lost なら false（RSK-01）
+        // SWR-29: WBO が Valid = 0 を送ってきたら、2 秒の喪失判定を待たずにその場で無効にする。
         // 待つと、直前の有効な λ が Stale（灰色）で最大 2 秒表示され続ける
         float lambdaValidFlag = 1.0f;
-        if (snap.get(SignalId::Lambda1Valid, lambdaValidFlag) && lambdaValidFlag < 0.5f) {
+        if (snap.get(SignalId::WboValid, lambdaValidFlag) && lambdaValidFlag < 0.5f) {
             v.hasLambda = false;
         }
         v.sensor      = classifyLambdaSensor(snap);
-        v.lambdaFr    = snap.freshnessOf(SignalId::Lambda1);
+        v.lambdaFr    = snap.freshnessOf(SignalId::WboLambda);
         v.lambdaStale = (v.lambdaFr == Freshness::Stale);
         if (v.hasLambda) {
             if (!m_lambdaSeeded) {

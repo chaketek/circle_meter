@@ -32,10 +32,11 @@ enum class SignalId : uint8_t {
     StatusFlags,
     Gear,
     // SYS-22 / SWR-29（2026-10-05 追加。NVS 互換のため末尾に足す）
-    Lambda1Valid,  ///< 0x207 を受けるたびに 1（λ 有効）/ 0（ECU が λ = 0 を送った）
+    Lambda1Valid,  ///< 0x207 を受けるたびに 1（λ 有効）/ 0（ECU が λ = 0 を送った）。診断用
     WboValid,      ///< rusEFI WBO StandardData の Valid
     WboTempC,      ///< rusEFI WBO のセンサ温度 [°C]
     WboStatus,     ///< rusEFI WBO の状態（rusefi::WboStatus の値）
+    WboLambda,     ///< rusEFI WBO の λ。表示に使う（SYS-03 / DEC-11）。Valid = 1 かつ有効範囲のときだけ更新
     COUNT
 };
 
