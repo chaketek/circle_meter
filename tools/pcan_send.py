@@ -19,6 +19,7 @@ DOC-30 の `IT-*` を実機で実行するための PC 側ハーネス（SWR-101
     python tools/pcan_send.py --mode wbo-warmup   # IT-17: λ センサの停止 -> 加熱 -> 正常（rusEFI WBO のフレームつき）
     python tools/pcan_send.py --mode wbo-fault    # IT-17: 加熱中に WBO が故障（SensorDidntHeat）
     python tools/pcan_send.py --mode ecu-warmup   # IT-17: WBO のフレームなし（ECU のヒータ許可ビットだけ）
+    python tools/pcan_send.py --mode startup      # キーオン -> 加熱 -> 暖まったら実走模擬を繰り返す（デモ向け）
     python tools/pcan_send.py --mode replay --csv tools/replay/idle.csv
     python tools/pcan_send.py --listen 10        # IT-04: バス上の全フレームを観測
 
@@ -296,6 +297,9 @@ def wbo_frames(s: Sample) -> list:
     return [(WBO_BASE, std), (WBO_BASE + 1, diag)]
 
 
+STARTUP_WARM_S = 18.0  # startup モード: wbo-warmup の 0-18 秒（停止 -> 加熱 -> 確認）を 1 回だけ流してから実走模擬へ
+
+
 def warmup_sample(mode: str, t: float) -> Sample:
     """IT-17: λ センサのウォームアップを 30 秒周期で再現する。"""
     t = t % 30.0
@@ -418,7 +422,7 @@ def main() -> None:
         "--mode",
         default="drive",
         choices=["drive", "idle", "sweep", "egt-danger", "dropout", "burst", "invalid", "replay",
-                 "wbo-warmup", "wbo-fault", "ecu-warmup"],
+                 "wbo-warmup", "wbo-fault", "ecu-warmup", "startup"],
     )
     ap.add_argument("--channel", default="PCAN_USBBUS1")
     ap.add_argument("--bitrate", type=int, default=500000)
@@ -504,6 +508,14 @@ def main() -> None:
                         last_sample = drive.sample(t, period * 1000.0)
                     elif args.mode in ("wbo-warmup", "wbo-fault", "ecu-warmup"):
                         last_sample = warmup_sample(args.mode, t)
+                    elif args.mode == "startup":
+                        # キーオン -> 始動して加熱 -> 暖まったら実走模擬を繰り返す（停止状態には戻らない）
+                        if t < STARTUP_WARM_S:
+                            last_sample = warmup_sample("wbo-warmup", t)
+                        else:
+                            last_sample = drive.sample(t - STARTUP_WARM_S, period * 1000.0)
+                            last_sample.wbo_status = 2  # WBO は正常（閉ループ）
+                            last_sample.wbo_temp = 780.0
                     else:
                         last_sample = simple_sample(args.mode, t)
                     sent += send_cycle(bus, f, last_sample, args.extended)

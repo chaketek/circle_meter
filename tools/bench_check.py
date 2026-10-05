@@ -156,7 +156,7 @@ def main() -> None:
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mode", default="drive",
                     choices=["drive", "idle", "sweep", "egt-danger", "dropout", "burst", "invalid",
-                             "wbo-warmup", "wbo-fault", "ecu-warmup"])
+                             "wbo-warmup", "wbo-fault", "ecu-warmup", "startup"])
     ap.add_argument("--seconds", type=float, default=45.0, help="観測時間（既定 45 秒 = 実走模擬 2 周期強）")
     ap.add_argument("--port", default=None, help="本体のシリアルポート（既定は自動検出）")
     ap.add_argument("--board", default="lcd21", choices=["lcd21", "m5dial"],

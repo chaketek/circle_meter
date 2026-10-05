@@ -40,6 +40,7 @@ python tools/bench_check.py --seconds 45
 | 高負荷 (`IT-03`) | `python tools/bench_check.py --mode burst --seconds 20` |
 | 無効値の扱い | `python tools/bench_check.py --mode invalid --seconds 15` |
 | λ センサのウォームアップ表示 (`IT-17`) | `python tools/bench_check.py --mode wbo-warmup --seconds 32`（故障は `wbo-fault`、WBO なしは `ecu-warmup`）。シリアルの `sensor=` が OFF -> WARMUP -> CHECK -> OK と推移すること |
+| キーオンからの流れを見せる（デモ） | `python tools/pcan_send.py --mode startup`（停止 -> 加熱 -> 確認の 18 秒のあと、実走模擬を繰り返す） |
 | **送信しないこと (`IT-04`)** | `python tools/bench_check.py --listen --seconds 30` |
 
 `--listen` は観測を始めてから**本体を RTS でリセット**し、起動直後（ROM ブートローダ・USB PHY が
