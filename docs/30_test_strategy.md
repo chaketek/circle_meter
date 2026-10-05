@@ -185,7 +185,7 @@ python tools/bench_check.py --listen --seconds 30
 | `IT-11` | 書き込み | USB-C で `tools/flash.ps1` を実行 | 書き込み成功、自動リセットで起動 | `SYS-54` |
 | `IT-12` | シミュレータ | `m5dial_sim` 環境で書き込み | CAN 未接続でも λ・EGT がスイープ表示される | `SYS-61`, `SWR-100` |
 | `IT-13` | 診断ページ | 診断ページを表示 | `SWR-92` の全項目が表示され、値が妥当に更新される | `SYS-62`, `SWR-92` |
-| `IT-15` | **ACK を返すこと**（`RSK-10`） | `pcan_send.py --mode idle` を流し、受信レートを確認する | 受信レートが送信レートと一致すること（6 フレーム × 20 Hz = **約 120 f/s**）。再送の嵐（数千 f/s）になっていないこと。λ と EGT の両方が表示されること | `SYS-07`, `RSK-10` |
+| `IT-15` | **ACK を返すこと**（`RSK-10`） | `pcan_send.py --mode idle` を流し、受信レートを確認する | 受信レートが送信レートと一致すること（ECU 6 + WBO 2 フレーム × 20 Hz = **約 160 f/s**。WBO の実機は 10 ms 周期なので車両では約 320 f/s）。再送の嵐（数千 f/s）になっていないこと。λ と EGT の両方が表示されること | `SYS-07`, `RSK-10` |
 | `IT-16` | **表示の安定性**（`RSK-14`） | `bench_check.py --mode burst` を流しながら、設定変更で NVS へ書き込む。画面を UVC カメラで連続撮影して確認する | NVS 書き込み中・CAN 受信中に画面の乱れ（ちらつき・ずれ・ノイズ）が出ない `RSK-14`, `OPN-12`（**2026-10-02**: 素の描画 + NVS では乱れなし。**LVGL 構成 + CAN 受信での実施は未了**） |
 | `IT-17` | **λ センサの状態表示** | `pcan_send.py --mode wbo-warmup`: ECU は λ = 0・ヒータ許可 OFF（3 秒）-> ON、WBO は Preheat -> Warmup（温度 25 -> 760 °C）-> Running、そのあと λ を有効にする。`--mode wbo-fault` で加熱中に `SensorDidntHeat`。シリアルの状態と画面（UVC カメラ）を確認 | `SENSOR OFF` -> `WARMING UP xxx°C` -> 通常表示の順に切り替わり、`NO SIGNAL` が出ない。故障で `SENSOR FAULT: NO HEAT` | `SYS-22`, `SWR-29`, `SWR-51` |
 | `IT-14` | LVGL 初期化 | 起動 | **480x480** 全域が正しく描画される（色・向き・鏡像なし）。LVGL の描画バッファが内蔵 SRAM、フレームバッファが PSRAM に確保されている（起動ログで確認） | `SWR-40`,`SWR-41`, `DEC-05` |
