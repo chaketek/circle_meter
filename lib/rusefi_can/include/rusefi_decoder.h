@@ -34,6 +34,13 @@ struct DecodeResult {
 /// @param baseId  verboseCanBaseAddress（既定 0x200）
 DecodeResult decodeFrame(uint32_t id, const uint8_t* data, uint8_t dlc, uint32_t baseId);
 
+/// rusEFI WBO の StandardData / DiagData をデコードする（SWR-11 / DOC-13 §3.7）。
+///   StandardData（0x190 + 2n）-> WboValid, WboTempC
+///   DiagData    （0x191 + 2n）-> WboStatus
+/// Version が kWboVersion 以外、DLC が 8 未満、ID が範囲外なら accepted=false。
+/// @param wboIndex WBO の CAN インデックス n（既定 0）
+DecodeResult decodeWboFrame(uint32_t id, const uint8_t* data, uint8_t dlc, uint8_t wboIndex = 0);
+
 /// λ が表示可能な値か（SYS-42 / RSK-09）。
 constexpr bool isLambdaValid(float lambda) {
     return lambda >= kLambdaMinValid && lambda <= kLambdaMaxValid;

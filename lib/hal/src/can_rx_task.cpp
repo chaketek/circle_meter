@@ -23,8 +23,11 @@ void canRxTask(void*) {
             continue;
         }
         const uint32_t now = millis();
-        const auto r =
-            rusefi::decodeFrame(msg.identifier, msg.data, msg.data_length_code, g_rx.cfg->canBaseId);
+        auto r = rusefi::decodeFrame(msg.identifier, msg.data, msg.data_length_code, g_rx.cfg->canBaseId);
+        if (!r.accepted && !msg.extd) {
+            // SWR-11: rusEFI WBO が自分で送る状態・温度（標準 ID 0x190 / 0x191）
+            r = rusefi::decodeWboFrame(msg.identifier, msg.data, msg.data_length_code);
+        }
 
         if (!r.accepted) {
             if (msg.data_length_code < rusefi::kFrameDlc) {

@@ -42,12 +42,18 @@ void CanDriver::applyFilter(const Config& cfg, twai_filter_config_t& f) const {
         return;
     }
 
-    // 標準 ID の single filter: acceptance_code のビット 31-21 が ID[10:0]。
-    // ベース ID から 16 個（BASE+0 .. BASE+15）を通し、下位 4 ビットを don't care にする。
-    // rusEFI が使うのは BASE+0..BASE+11 なので余剰の 12..15 は decodeFrame が弾く。
-    f.acceptance_code = static_cast<uint32_t>(cfg.canBaseId & 0x7F0u) << 21;
-    f.acceptance_mask = (0x00Fu << 21) | 0x1FFFFFu;
-    f.single_filter   = true;
+    // 標準 ID のデュアルフィルタ（SWR-11）。マスクのビット 1 は don't care。
+    //   フィルタ 1: ビット 31-21 = ID[10:0]、20 = RTR、19-16 と 3-0 = データ 1 バイト目 -> verbose broadcast
+    //   フィルタ 2: ビット 15-5  = ID[10:0]、4 = RTR                                 -> rusEFI WBO
+    // それぞれ下位 4 ビットを don't care にして 16 個ずつ通す。verbose は BASE+0..BASE+11、WBO は
+    // 0x190..0x19F（インデックス 0-7 の StandardData / DiagData）。余剰の ID はデコーダが弾く。
+    // 以前は single filter で verbose だけを通していた（WBO のフレームは届かなかった）。
+    const uint32_t verboseId = static_cast<uint32_t>(cfg.canBaseId & 0x7F0u);
+    const uint32_t wboId     = rusefi::kWboDataBaseId & 0x7F0u;
+    f.acceptance_code        = (verboseId << 21) | (wboId << 5);
+    f.acceptance_mask = (0x00Fu << 21) | (0x1Fu << 16) | 0x0Fu  // フィルタ 1: ID 下位 4 bit・RTR・データ
+                        | (0x00Fu << 5) | (0x1u << 4);          // フィルタ 2: ID 下位 4 bit・RTR
+    f.single_filter   = false;
 }
 
 bool CanDriver::begin(const Config& cfg) {

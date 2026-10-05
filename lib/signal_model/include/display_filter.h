@@ -10,6 +10,7 @@
 #include <cstdint>
 
 #include "config.h"
+#include "lambda_sensor_state.h"
 #include "signal_store.h"
 #include "units.h"
 
@@ -23,6 +24,7 @@ struct DisplayValues {
     LambdaZone zone    = LambdaZone::Optimal;
     float ringRatio    = 0.0f;  ///< 0.0-1.0（リング / 針の位置）
     Freshness lambdaFr = Freshness::Lost;
+    LambdaSensorInfo sensor{};  ///< SWR-29: λ が無効なときの理由（停止中 / 加熱中 / 故障 / 通信なし）
     // EGT
     bool hasEgt       = false;
     bool egtStale     = false;
@@ -47,8 +49,15 @@ public:
         m_hasLast           = true;
 
         DisplayValues v;
-        float lambda  = 0.0f;
-        v.hasLambda   = snap.get(SignalId::Lambda1, lambda);  // Lost なら false（RSK-01）
+        float lambda = 0.0f;
+        v.hasLambda  = snap.get(SignalId::Lambda1, lambda);  // Lost なら false（RSK-01）
+        // SWR-29: ECU が λ = 0（無効）を送ってきたら、2 秒の喪失判定を待たずにその場で無効にする。
+        // 待つと、直前の有効な λ が Stale（灰色）で最大 2 秒表示され続ける
+        float lambdaValidFlag = 1.0f;
+        if (snap.get(SignalId::Lambda1Valid, lambdaValidFlag) && lambdaValidFlag < 0.5f) {
+            v.hasLambda = false;
+        }
+        v.sensor      = classifyLambdaSensor(snap);
         v.lambdaFr    = snap.freshnessOf(SignalId::Lambda1);
         v.lambdaStale = (v.lambdaFr == Freshness::Stale);
         if (v.hasLambda) {

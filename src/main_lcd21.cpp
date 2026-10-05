@@ -16,6 +16,7 @@
 #include "config.h"
 #include "display_hal.h"
 #include "display_policy.h"
+#include "lambda_sensor_state.h"
 #include "lvgl_port.h"
 #include "page_lambda.h"
 #include "page_needle.h"
@@ -116,6 +117,7 @@ void simTask(void*) {
         const SweepOutput o = sim.step(g_simHold.load() ? 0 : now - last);
         last                = now;
         g_store.update(SignalId::Lambda1, o.lambda, now);
+        g_store.update(SignalId::Lambda1Valid, 1.0f, now);  // SWR-29: 実機では 0x207 ごとに ECU が伝える
         g_store.update(SignalId::Egt1, o.egtC, now);
         g_store.update(SignalId::Rpm, o.rpm, now);
         g_store.update(SignalId::Clt, 85.0f, now);
@@ -191,18 +193,24 @@ void handleDebugKeys() {
 void printCanStatus(uint32_t nowMs, uint32_t frameUs) {
     const CanStats& st  = g_can.stats();
     const Snapshot snap = g_store.snapshot(nowMs);
+    // SWR-29: λ センサの状態（IT-17 でシリアルから確認する）
+    static const char* const kSensorNames[] = {
+        "OK", "NO_SIGNAL", "OFF", "WARMUP", "CHECK", "FAULT_NO_HEAT", "FAULT_OVERHEAT", "FAULT_UNDERHEAT"};
+    const LambdaSensorInfo sensor = classifyLambdaSensor(snap);
     float lam = 0.0f, egt = 0.0f;
     const bool hasLam = snap.get(SignalId::Lambda1, lam);
     const bool hasEgt = snap.get(SignalId::Egt1, egt);
     Serial.printf(
         "rx=%lu f/s=%lu unk=%lu dlc=%lu ovf=%lu tec=%lu rec=%lu | lam=%s%.3f egt=%s%.0f | "
-        "ageL=%lu ageE=%lu snapFail=%lu | draw=%luus (max %lu fps) heap=%u\n",
+        "ageL=%lu ageE=%lu snapFail=%lu | draw=%luus (max %lu fps) heap=%u | sensor=%s %d\n",
         (unsigned long)st.rxFrames, (unsigned long)st.framesPerSec, (unsigned long)st.unknownId,
         (unsigned long)st.badDlc, (unsigned long)st.queueOverflow, (unsigned long)st.tec,
         (unsigned long)st.rec, hasLam ? "" : "(none)", lam, hasEgt ? "" : "(none)", egt,
         (unsigned long)snap.ageMs(SignalId::Lambda1), (unsigned long)snap.ageMs(SignalId::Egt1),
         (unsigned long)g_store.snapshotFailures(), (unsigned long)frameUs,
-        (unsigned long)(frameUs ? 1000000UL / frameUs : 0), static_cast<unsigned>(ESP.getFreeHeap()));
+        (unsigned long)(frameUs ? 1000000UL / frameUs : 0), static_cast<unsigned>(ESP.getFreeHeap()),
+        kSensorNames[static_cast<int>(sensor.state)],
+        sensor.hasTemp ? static_cast<int>(sensor.tempC + 0.5f) : -1);
 }
 #endif
 

@@ -27,7 +27,7 @@ ROOT = os.path.dirname(HERE)
 TTF = os.path.join(ROOT, "assets", "fonts", "Montserrat-Bold.ttf")
 B612_BOLD = os.path.join(ROOT, "assets", "fonts", "B612Mono-Bold.ttf")
 B612_REG = os.path.join(ROOT, "assets", "fonts", "B612Mono-Regular.ttf")
-UPPER = " -./0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+UPPER = " -./0123456789:ABCDEFGHIJKLMNOPQRSTUVWXYZ\u00b0"  # ":" と "°" は λ センサの状態表示（SWR-51）
 ASCII = "".join(chr(c) for c in range(0x20, 0x7F))
 OUT_DIR = os.path.join(ROOT, "assets", "lcd21", "fonts")
 

@@ -61,7 +61,7 @@ void PageLambda::onCreate(lv_obj_t* parent, const Config& cfg) {
     m_mainNum.create(m_root, m_showAfr ? &cm_font_afr : &cm_font_lambda,
                      m_showAfr ? kMainWidthAfr : kMainWidthLambda, layout::kMainY);
     m_egtNum.create(m_root, &cm_font_egt, kEgtWidth, layout::kEgtY);
-    m_status = makeLabel(m_root, &lv_font_montserrat_24, color::kTextSub, 240, layout::kStatusY);
+    m_status = makeLabel(m_root, &lv_font_montserrat_24, color::kTextSub, 340, layout::kStatusY);
 
     // LVGL のラベルは作成直後に "Text" と表示する。空の保持配列を参照させて消しておく
     lv_label_set_text_static(m_freshness, m_lastFreshness);
@@ -134,10 +134,12 @@ void PageLambda::onUpdate(const Snapshot& snap, const Config& cfg) {
     m_egtNum.setText(buf, egtColorHex(v, blinkOn));
     m_ring.setAlarm(egtAlarmOn(v, blinkOn));
 
-    // ---- 下端: NO SIGNAL が最優先、なければ診断文字列
-    if (v.lambdaFr == Freshness::Lost) {
-        setText(m_status, m_lastStatus, sizeof(m_lastStatus), "NO SIGNAL");
-        setColor(m_status, &m_lastStatusColor, color::kDanger);
+    // ---- 下端: λ が無効ならその理由（SWR-51: NO SIGNAL / 停止中 / 加熱中 / 故障）、なければ診断文字列
+    if (!v.hasLambda && v.sensor.state != LambdaSensorState::Ok) {
+        char st[32];
+        formatSensorStatus(st, sizeof(st), v.sensor);
+        setText(m_status, m_lastStatus, sizeof(m_lastStatus), st);
+        setColor(m_status, &m_lastStatusColor, sensorStatusColorHex(v.sensor));
     } else {
         setText(m_status, m_lastStatus, sizeof(m_lastStatus), m_diag);
         setColor(m_status, &m_lastStatusColor, color::kTextSub);

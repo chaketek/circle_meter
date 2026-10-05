@@ -31,7 +31,8 @@ private:
     lv_obj_t* m_diag   = nullptr;  // デモの fps など
     DisplayFilter m_filter;
 
-    char m_lastStatus[12]{};
+    char m_lastStatus[32]{};
+    uint32_t m_lastStatusHex = 0;
     char m_lastDiag[24]{};
 };
 

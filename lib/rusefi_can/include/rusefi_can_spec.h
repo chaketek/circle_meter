@@ -60,6 +60,26 @@ constexpr float kEgtMaxValidC   = 1275.0f;  // uint8 * 5 の上限
 
 // ---------------------------------------------------------------- 小ヘルパ
 /// リトルエンディアンの uint16 を取り出す。
+// ---- rusEFI WBO（ワイドバンドコントローラ）のフレーム（DOC-13 §2.1 / §3.7、SWR-11）
+// 一次情報: rusefi/wideband の for_rusefi/wideband_can.h（コミット ca2adce4）
+constexpr uint32_t kWboDataBaseId = 0x190;  ///< StandardData = 0x190 + 2n、DiagData = 0x191 + 2n
+constexpr uint8_t kWboVersion     = 0xA0;   ///< RUSEFI_WIDEBAND_VERSION。異なる版のフレームは捨てる
+constexpr float kWboTempScaleC    = 1.0f;   ///< TemperatureC: uint16 LE, 1 degC/LSB
+constexpr uint8_t kWboOffVersion  = 0;      ///< StandardData の Version
+constexpr uint8_t kWboOffValid    = 1;      ///< StandardData の Valid
+constexpr uint8_t kWboOffTempC    = 4;      ///< StandardData の TemperatureC
+constexpr uint8_t kWboOffStatus   = 5;      ///< DiagData の Status
+
+/// rusEFI WBO の状態（wbo::Status と同じ値）
+enum class WboStatus : uint8_t {
+    Preheat           = 0,  ///< 加熱許可待ち
+    Warmup            = 1,  ///< 加熱中
+    RunningClosedLoop = 2,  ///< 正常
+    SensorDidntHeat   = 3,
+    SensorOverheat    = 4,
+    SensorUnderheat   = 5,
+};
+
 constexpr uint16_t le16(const uint8_t* d, uint8_t off) {
     return static_cast<uint16_t>(d[off]) | static_cast<uint16_t>(static_cast<uint16_t>(d[off + 1]) << 8);
 }

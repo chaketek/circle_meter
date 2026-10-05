@@ -42,7 +42,7 @@ private:
     // 前回設定した内容。変わらないものを LVGL に渡さない（無効化 = 再描画を避ける）
     char m_lastFreshness[8]{};
     char m_lastUnit[8]{};
-    char m_lastStatus[24]{};
+    char m_lastStatus[32]{};
     uint32_t m_lastStatusColor = 0xFFFFFFFF;
 };
 

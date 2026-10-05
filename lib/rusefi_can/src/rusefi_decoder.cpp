@@ -47,7 +47,12 @@ void decodeSensors2(DecodeResult& r, const uint8_t* d) {
 }
 
 void decodeFueling3(DecodeResult& r, const uint8_t* d) {
-    push(r, SignalId::Lambda1, static_cast<float>(le16(d, 0)) * kLambdaScale);
+    const float lambda1 = static_cast<float>(le16(d, 0)) * kLambdaScale;
+    push(r, SignalId::Lambda1, lambda1);
+    // SWR-29: rusEFI はセンサが無効のとき λ = 0 を送る（DOC-13
+    // §3.1.1）。「届いたが無効」をフレームごとに記録し、 「届いていない（NO SIGNAL）」と区別する。λ
+    // そのものは無効値なので受信側でストアに入れない（SYS-42）
+    push(r, SignalId::Lambda1Valid, isLambdaValid(lambda1) ? 1.0f : 0.0f);
     push(r, SignalId::Lambda2, static_cast<float>(le16(d, 2)) * kLambdaScale);
 }
 
@@ -97,6 +102,32 @@ DecodeResult decodeFrame(uint32_t id, const uint8_t* data, uint8_t dlc, uint32_t
     }
 
     r.accepted = true;
+    return r;
+}
+
+DecodeResult decodeWboFrame(uint32_t id, const uint8_t* data, uint8_t dlc, uint8_t wboIndex) {
+    DecodeResult r;
+    if (data == nullptr || dlc < kFrameDlc) {
+        return r;
+    }
+    const uint32_t dataId = kWboDataBaseId + 2u * wboIndex;
+    if (id == dataId) {
+        // StandardData。Version が違う WBO は形式が変わっている可能性があるので読まない
+        if (data[kWboOffVersion] != kWboVersion) {
+            return r;
+        }
+        r.accepted = true;
+        push(r, SignalId::WboValid, (data[kWboOffValid] & 0x01u) ? 1.0f : 0.0f);
+        push(r, SignalId::WboTempC, static_cast<float>(le16(data, kWboOffTempC)) * kWboTempScaleC);
+    } else if (id == dataId + 1u) {
+        // DiagData。Version を持たないので、状態の値の範囲だけ確かめる
+        const uint8_t status = data[kWboOffStatus];
+        if (status > static_cast<uint8_t>(WboStatus::SensorUnderheat)) {
+            return r;
+        }
+        r.accepted = true;
+        push(r, SignalId::WboStatus, static_cast<float>(status));
+    }
     return r;
 }
 

@@ -16,6 +16,9 @@ DOC-30 の `IT-*` を実機で実行するための PC 側ハーネス（SWR-101
     python tools/pcan_send.py --mode dropout
     python tools/pcan_send.py --mode burst
     python tools/pcan_send.py --mode invalid
+    python tools/pcan_send.py --mode wbo-warmup   # IT-17: λ センサの停止 -> 加熱 -> 正常（rusEFI WBO のフレームつき）
+    python tools/pcan_send.py --mode wbo-fault    # IT-17: 加熱中に WBO が故障（SensorDidntHeat）
+    python tools/pcan_send.py --mode ecu-warmup   # IT-17: WBO のフレームなし（ECU のヒータ許可ビットだけ）
     python tools/pcan_send.py --mode replay --csv tools/replay/idle.csv
     python tools/pcan_send.py --listen 10        # IT-04: バス上の全フレームを観測
 
@@ -79,7 +82,8 @@ class Sample:
     """1 サイクル分の車両状態。"""
 
     def __init__(self, phase="", afr=STOICH, egt=500.0, rpm=850.0, speed=0.0, gear=0,
-                 map_kpa=35.0, inj_duty=5.0, timing=15.0, clt=87.0, iat=32.0, fuel_cut=False):
+                 map_kpa=35.0, inj_duty=5.0, timing=15.0, clt=87.0, iat=32.0, fuel_cut=False,
+                 o2_heater=True, lam_invalid=False, wbo_status=None, wbo_temp=780.0):
         self.phase = phase
         self.afr = afr
         self.egt = egt
@@ -92,6 +96,12 @@ class Sample:
         self.clt = clt
         self.iat = iat
         self.fuel_cut = fuel_cut
+        # SYS-22 / IT-17: λ センサの状態。lam_invalid なら 0x207 に λ = 0 を送る（rusEFI の getOrZero と同じ）。
+        # wbo_status が None でなければ rusEFI WBO のフレーム（0x190 / 0x191）も送る
+        self.o2_heater = o2_heater
+        self.lam_invalid = lam_invalid
+        self.wbo_status = wbo_status
+        self.wbo_temp = wbo_temp
 
     @property
     def lam(self) -> float:
@@ -104,8 +114,9 @@ class Frames:
     def __init__(self, base: int):
         self.base = base
 
-    def status(self, gear: int = 0, cel: bool = False, lambda_protect: bool = False) -> tuple:
-        flags = (0x08 if cel else 0) | (0x20 if lambda_protect else 0) | 0x02  # main relay on
+    def status(self, gear: int = 0, cel: bool = False, lambda_protect: bool = False, o2_heater: bool = True) -> tuple:
+        # bit4 = O2 ヒータ許可（rusEFI: forceO2Heating || エンジン回転中。DOC-13 §3.6）
+        flags = (0x08 if cel else 0) | (0x20 if lambda_protect else 0) | (0x10 if o2_heater else 0) | 0x02
         d = struct.pack("<HHBBH", 0, 0, flags, gear, 0)
         return (self.base + OFF_STATUS, d)
 
@@ -271,6 +282,47 @@ class DriveCycle:
         return Sample()
 
 
+WBO_BASE = 0x190
+WBO_VERSION = 0xA0
+
+
+def wbo_frames(s: Sample) -> list:
+    """rusEFI WBO の StandardData / DiagData（DOC-13 §3.7）。インデックス 0。"""
+    valid = 1 if (s.wbo_status == 2 and not s.lam_invalid) else 0
+    lam = 0 if not valid else int(round(s.lam * 10000))
+    std = struct.pack("<BBHHH", WBO_VERSION, valid, lam, int(s.wbo_temp), 0)
+    heater_duty = 0 if s.wbo_status == 0 else (230 if s.wbo_status == 1 else 90)
+    diag = struct.pack("<HHBBBB", 300, 450, 128, s.wbo_status, heater_duty, 0)
+    return [(WBO_BASE, std), (WBO_BASE + 1, diag)]
+
+
+def warmup_sample(mode: str, t: float) -> Sample:
+    """IT-17: λ センサのウォームアップを 30 秒周期で再現する。"""
+    t = t % 30.0
+    if mode == "ecu-warmup":
+        # WBO のフレームなし。ECU のヒータ許可ビットと λ = 0 だけで判定させる（OPN-19 の代替経路）
+        if t < 4.0:
+            return Sample("ENGINE OFF", rpm=0.0, o2_heater=False, lam_invalid=True)
+        if t < 14.0:
+            return Sample("WARMUP", rpm=850.0, o2_heater=True, lam_invalid=True)
+        return Sample("IDLE", rpm=850.0)
+    if mode == "wbo-fault":
+        if t < 4.0:
+            return Sample("PREHEAT", rpm=0.0, o2_heater=False, lam_invalid=True, wbo_status=0, wbo_temp=25.0)
+        if t < 10.0:
+            return Sample("WARMUP", rpm=850.0, lam_invalid=True, wbo_status=1, wbo_temp=25.0 + (t - 4.0) * 60.0)
+        return Sample("NO HEAT", rpm=850.0, lam_invalid=True, wbo_status=3, wbo_temp=385.0)
+    # wbo-warmup
+    if t < 4.0:
+        return Sample("PREHEAT", rpm=0.0, o2_heater=False, lam_invalid=True, wbo_status=0, wbo_temp=25.0)
+    if t < 16.0:
+        return Sample("WARMUP", rpm=850.0, lam_invalid=True, wbo_status=1, wbo_temp=25.0 + (t - 4.0) * 61.0)
+    if t < 18.0:
+        # 閉ループに入った直後。WBO は正常だが λ はまだ無効（SENSOR CHECK）
+        return Sample("CLOSED LOOP", rpm=850.0, lam_invalid=True, wbo_status=2, wbo_temp=770.0)
+    return Sample("RUNNING", rpm=850.0, wbo_status=2, wbo_temp=780.0)
+
+
 def simple_sample(mode: str, t: float) -> Sample:
     """drive 以外のモード。"""
     if mode == "idle":
@@ -289,15 +341,20 @@ def simple_sample(mode: str, t: float) -> Sample:
 
 def send_cycle(bus, f: Frames, s: Sample, extended: bool) -> int:
     msgs = [
-        f.status(gear=s.gear),
+        f.status(gear=s.gear, o2_heater=s.o2_heater),
         f.speeds(s.rpm, timing=s.timing, inj=s.inj_duty, vss=s.speed),
         f.sensors1(map_kpa=s.map_kpa, clt=s.clt, iat=s.iat),
         f.sensors2(oil_kpa=200.0 + s.rpm * 0.05, oil_temp=95.0, batt_v=13.9),
-        f.fueling3(s.lam),
+        f.fueling3(0.0 if s.lam_invalid else s.lam),
         f.egts(s.egt),
     ]
     for can_id, data in msgs:
         bus.send(can.Message(arbitration_id=can_id, data=data, is_extended_id=extended))
+    if s.wbo_status is not None:
+        # 実機の WBO は 10 ms 周期だが、ベンチでは ECU と同じ周期で十分（鮮度判定は 500 ms）。WBO は常に標準 ID
+        for can_id, data in wbo_frames(s):
+            bus.send(can.Message(arbitration_id=can_id, data=data, is_extended_id=False))
+        return len(msgs) + 2
     return len(msgs)
 
 
@@ -360,7 +417,8 @@ def main() -> None:
     ap.add_argument(
         "--mode",
         default="drive",
-        choices=["drive", "idle", "sweep", "egt-danger", "dropout", "burst", "invalid", "replay"],
+        choices=["drive", "idle", "sweep", "egt-danger", "dropout", "burst", "invalid", "replay",
+                 "wbo-warmup", "wbo-fault", "ecu-warmup"],
     )
     ap.add_argument("--channel", default="PCAN_USBBUS1")
     ap.add_argument("--bitrate", type=int, default=500000)
@@ -444,6 +502,8 @@ def main() -> None:
                 else:
                     if args.mode == "drive":
                         last_sample = drive.sample(t, period * 1000.0)
+                    elif args.mode in ("wbo-warmup", "wbo-fault", "ecu-warmup"):
+                        last_sample = warmup_sample(args.mode, t)
                     else:
                         last_sample = simple_sample(args.mode, t)
                     sent += send_cycle(bus, f, last_sample, args.extended)

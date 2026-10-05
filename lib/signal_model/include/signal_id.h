@@ -31,6 +31,11 @@ enum class SignalId : uint8_t {
     BattVolt,
     StatusFlags,
     Gear,
+    // SYS-22 / SWR-29（2026-10-05 追加。NVS 互換のため末尾に足す）
+    Lambda1Valid,  ///< 0x207 を受けるたびに 1（λ 有効）/ 0（ECU が λ = 0 を送った）
+    WboValid,      ///< rusEFI WBO StandardData の Valid
+    WboTempC,      ///< rusEFI WBO のセンサ温度 [°C]
+    WboStatus,     ///< rusEFI WBO の状態（rusefi::WboStatus の値）
     COUNT
 };
 

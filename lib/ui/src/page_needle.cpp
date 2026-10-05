@@ -56,7 +56,7 @@ void PageNeedle::onCreate(lv_obj_t* parent, const Config& cfg) {
     m_egtNum.create(m_root, &cm_font_b612_egt, kEgtWidth, kEgtY);
     m_egtNum.setCellScale(0xB0, kDegScale);  // '°'
 
-    m_status = makeLabel(m_root, &cm_font_b612_label, color::kDanger, 220, kStatusY);
+    m_status = makeLabel(m_root, &cm_font_b612_label, color::kDanger, 340, kStatusY);
     m_diag   = makeLabel(m_root, &cm_font_b612_small, 0x6A6A6A, 200, kDiagY);
     lv_label_set_text_static(m_status, m_lastStatus);  // 作成直後の "Text" を消す
     lv_label_set_text_static(m_diag, m_lastDiag);
@@ -96,7 +96,17 @@ void PageNeedle::onUpdate(const Snapshot& snap, const Config& cfg) {
     m_egtNum.setText(buf, egtColorHex(v, blinkOn));
     m_face.setAlarm(egtAlarmOn(v, blinkOn));
 
-    setLabel(m_status, m_lastStatus, sizeof(m_lastStatus), v.lambdaFr == Freshness::Lost ? "NO SIGNAL" : "");
+    // SWR-51: λ が無効ならその理由（NO SIGNAL / 停止中 / 加熱中 / 故障）
+    char st[32] = "";
+    if (!v.hasLambda && v.sensor.state != LambdaSensorState::Ok) {
+        formatSensorStatus(st, sizeof(st), v.sensor);
+    }
+    const uint32_t stHex = sensorStatusColorHex(v.sensor);
+    if (stHex != m_lastStatusHex) {
+        m_lastStatusHex = stHex;
+        lv_obj_set_style_text_color(m_status, lv_color_hex(stHex), 0);
+    }
+    setLabel(m_status, m_lastStatus, sizeof(m_lastStatus), st);
 }
 
 }  // namespace cm::ui

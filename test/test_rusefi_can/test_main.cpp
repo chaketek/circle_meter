@@ -289,6 +289,52 @@ void test_UT10_unused_frames_accepted_without_signals() {
     TEST_ASSERT_EQUAL_UINT8(0, r.count);
 }
 
+// ---------------------------------------------------------------- UT-22
+// SWR-11 / SWR-29: rusEFI WBO のフレームと、0x207 の「λ 無効」の記録
+void test_UT22_wbo_standard_data() {
+    // Version 0xA0, Valid 1, Lambda 0x2710 (1.0), TemperatureC 0x030C (780 degC)
+    const uint8_t d[8]   = {0xA0, 0x01, 0x10, 0x27, 0x0C, 0x03, 0x00, 0x00};
+    const DecodeResult r = decodeWboFrame(0x190, d, 8);
+    TEST_ASSERT_TRUE(r.accepted);
+    float v = 0.0f;
+    TEST_ASSERT_TRUE(find(r, SignalId::WboValid, v));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, v);
+    TEST_ASSERT_TRUE(find(r, SignalId::WboTempC, v));
+    TEST_ASSERT_EQUAL_FLOAT(780.0f, v);
+}
+
+void test_UT22_wbo_diag_status() {
+    uint8_t d[8]   = {0x10, 0x01, 0x20, 0x03, 0x40, 0x01, 0x80, 0x00};  // Status = 1 (Warmup)
+    DecodeResult r = decodeWboFrame(0x191, d, 8);
+    TEST_ASSERT_TRUE(r.accepted);
+    float v = 0.0f;
+    TEST_ASSERT_TRUE(find(r, SignalId::WboStatus, v));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, v);
+    d[5] = 6;  // 定義に無い状態は捨てる
+    TEST_ASSERT_FALSE(decodeWboFrame(0x191, d, 8).accepted);
+}
+
+void test_UT22_wbo_rejects_bad_frames() {
+    uint8_t d[8] = {0xA0, 0x01, 0x10, 0x27, 0x0C, 0x03, 0x00, 0x00};
+    TEST_ASSERT_FALSE(decodeWboFrame(0x190, d, 7).accepted);    // DLC 不足
+    TEST_ASSERT_FALSE(decodeWboFrame(0x192, d, 8).accepted);    // 別のインデックス
+    TEST_ASSERT_TRUE(decodeWboFrame(0x192, d, 8, 1).accepted);  // インデックス 1 なら 0x192
+    TEST_ASSERT_FALSE(decodeWboFrame(0x190, nullptr, 8).accepted);
+    d[0] = 0xA1;  // 違う版数
+    TEST_ASSERT_FALSE(decodeWboFrame(0x190, d, 8).accepted);
+}
+
+void test_UT22_fueling3_reports_lambda_validity() {
+    uint8_t d[8] = {0x10, 0x27, 0, 0, 0, 0, 0, 0};  // λ = 1.0
+    float v      = -1.0f;
+    TEST_ASSERT_TRUE(find(decodeFrame(0x207, d, 8, kBase), SignalId::Lambda1Valid, v));
+    TEST_ASSERT_EQUAL_FLOAT(1.0f, v);
+    d[0] = 0;  // λ = 0: rusEFI がセンサ無効のときに送る値（DOC-13 §3.1.1）
+    d[1] = 0;
+    TEST_ASSERT_TRUE(find(decodeFrame(0x207, d, 8, kBase), SignalId::Lambda1Valid, v));
+    TEST_ASSERT_EQUAL_FLOAT(0.0f, v);
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_UT01_base_id_offset);
@@ -307,5 +353,9 @@ int main(int, char**) {
     RUN_TEST(test_UT10_short_dlc_rejected);
     RUN_TEST(test_UT10_null_pointer_is_safe);
     RUN_TEST(test_UT10_unused_frames_accepted_without_signals);
+    RUN_TEST(test_UT22_wbo_standard_data);
+    RUN_TEST(test_UT22_wbo_diag_status);
+    RUN_TEST(test_UT22_wbo_rejects_bad_frames);
+    RUN_TEST(test_UT22_fueling3_reports_lambda_validity);
     return UNITY_END();
 }

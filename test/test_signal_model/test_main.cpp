@@ -1,5 +1,5 @@
 // SWE.4 ユニット検証: 信号モデル（鮮度・単位換算・設定）
-// UT-05 〜 UT-09, UT-11 〜 UT-21  (docs/30_test_strategy.md §2)
+// UT-05 〜 UT-09, UT-11 〜 UT-21, UT-23  (docs/30_test_strategy.md §2)
 #include <unity.h>
 
 #include <atomic>
@@ -13,6 +13,7 @@
 #include "config.h"
 #include "display_filter.h"
 #include "display_policy.h"
+#include "lambda_sensor_state.h"
 #include "ring_geometry.h"
 #include "rusefi_decoder.h"
 #include "signal_store.h"
@@ -809,6 +810,69 @@ void test_UT21_lpf_and_stale_and_levels() {
     TEST_ASSERT_TRUE(v2.lambdaStale);
 }
 
+// ---------------------------------------------------------------- UT-23
+// SWR-29: λ センサの状態判定の優先順位
+void test_UT23_no_lambda_frame_is_no_signal() {
+    SignalStore store;
+    store.update(SignalId::WboStatus, 1.0f, 1000);  // WBO だけ届いても、0x207 が無ければ通信異常
+    TEST_ASSERT_EQUAL(static_cast<int>(LambdaSensorState::NoSignal),
+                      static_cast<int>(classifyLambdaSensor(store.snapshot(1000)).state));
+}
+
+void test_UT23_valid_lambda_is_ok() {
+    SignalStore store;
+    store.update(SignalId::Lambda1, 1.0f, 1000);
+    store.update(SignalId::Lambda1Valid, 1.0f, 1000);
+    store.update(SignalId::WboStatus, 3.0f, 1000);  // WBO の状態より、ECU の有効な λ を優先する
+    TEST_ASSERT_EQUAL(static_cast<int>(LambdaSensorState::Ok),
+                      static_cast<int>(classifyLambdaSensor(store.snapshot(1000)).state));
+}
+
+void test_UT23_wbo_states_with_temperature() {
+    const struct {
+        float status;
+        LambdaSensorState expect;
+    } cases[] = {{0.0f, LambdaSensorState::SensorOff},     {1.0f, LambdaSensorState::WarmingUp},
+                 {2.0f, LambdaSensorState::Check},         {3.0f, LambdaSensorState::FaultNoHeat},
+                 {4.0f, LambdaSensorState::FaultOverheat}, {5.0f, LambdaSensorState::FaultUnderheat}};
+    for (const auto& c : cases) {
+        SignalStore store;
+        store.update(SignalId::Lambda1Valid, 0.0f, 1000);
+        store.update(SignalId::WboStatus, c.status, 1000);
+        store.update(SignalId::WboTempC, 520.0f, 1000);
+        const LambdaSensorInfo info = classifyLambdaSensor(store.snapshot(1000));
+        TEST_ASSERT_EQUAL(static_cast<int>(c.expect), static_cast<int>(info.state));
+        TEST_ASSERT_TRUE(info.hasTemp);
+        TEST_ASSERT_EQUAL_FLOAT(520.0f, info.tempC);
+    }
+}
+
+void test_UT23_without_wbo_uses_heater_bit() {
+    SignalStore store;
+    store.update(SignalId::Lambda1Valid, 0.0f, 1000);
+    store.update(SignalId::StatusFlags, 0.0f, 1000);  // ヒータ許可なし
+    LambdaSensorInfo info = classifyLambdaSensor(store.snapshot(1000));
+    TEST_ASSERT_EQUAL(static_cast<int>(LambdaSensorState::SensorOff), static_cast<int>(info.state));
+    TEST_ASSERT_FALSE(info.hasTemp);
+    store.update(SignalId::StatusFlags, static_cast<float>(status_bit::kO2Heater), 1100);
+    info = classifyLambdaSensor(store.snapshot(1100));
+    TEST_ASSERT_EQUAL(static_cast<int>(LambdaSensorState::WarmingUp), static_cast<int>(info.state));
+}
+
+void test_UT23_invalid_lambda_hides_value_immediately() {
+    // ECU が λ = 0 を送ったら、Lambda1 がまだ Stale の範囲でも古い値を表示に使わない（RSK-01）
+    SignalStore store;
+    DisplayFilter f;
+    const Config cfg = defaultConfig();
+    store.update(SignalId::Lambda1, 0.95f, 1000);
+    store.update(SignalId::Lambda1Valid, 1.0f, 1000);
+    TEST_ASSERT_TRUE(f.update(store.snapshot(1000), cfg).hasLambda);
+    store.update(SignalId::Lambda1Valid, 0.0f, 1050);  // 次のフレームで λ = 0（Lambda1 は更新されない）
+    const DisplayValues v = f.update(store.snapshot(1050), cfg);
+    TEST_ASSERT_FALSE(v.hasLambda);
+    TEST_ASSERT_EQUAL(static_cast<int>(LambdaSensorState::SensorOff), static_cast<int>(v.sensor.state));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_UT05_zone_boundaries_exact);
@@ -863,5 +927,10 @@ int main(int, char**) {
     RUN_TEST(test_UT21_lost_gives_no_value);
     RUN_TEST(test_UT21_recovery_does_not_glide_from_old_value);
     RUN_TEST(test_UT21_lpf_and_stale_and_levels);
+    RUN_TEST(test_UT23_no_lambda_frame_is_no_signal);
+    RUN_TEST(test_UT23_valid_lambda_is_ok);
+    RUN_TEST(test_UT23_wbo_states_with_temperature);
+    RUN_TEST(test_UT23_without_wbo_uses_heater_bit);
+    RUN_TEST(test_UT23_invalid_lambda_hides_value_immediately);
     return UNITY_END();
 }
