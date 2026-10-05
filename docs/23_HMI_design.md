@@ -232,7 +232,8 @@ CAN は受信しているが λ が無効のとき、`NO SIGNAL` の代わりに
 | `FaultNoHeat` | `SENSOR FAULT: NO HEAT` | `#FF2D2D` | WBO が「加熱しない」 |
 | `FaultOverheat` | `SENSOR FAULT: OVERHEAT` | `#FF2D2D` | 過熱 |
 | `FaultUnderheat` | `SENSOR FAULT: UNDERHEAT` | `#FF2D2D` | 温度不足 |
-| `NoSignal` | `NO SIGNAL` | `#FF2D2D` | `0x207` が 2 秒届いていない（通信異常） |
+| `NoWbo` | `NO WBO DATA` | `#FF2D2D` | ECU のフレームは届くが WBO のフレームが 2 秒届いていない |
+| `NoSignal` | `NO SIGNAL` | `#FF2D2D` | ECU のフレームも WBO のフレームも 2 秒届いていない（通信異常） |
 
 ![指針式 A での表示（実機、2026-10-05）](images/sensor_state_device.jpg)
 

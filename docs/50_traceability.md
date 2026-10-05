@@ -75,7 +75,7 @@
 | `UT-19` | `SYS-20`,`SWR-46`,`SWR-47` | 同上 |
 | `UT-20` | `DEC-10`,`SWR-49` | 同上 |
 | `UT-21` | `RSK-01`,`SWR-24`,`SWR-49` | 同上 |
-| `UT-22` | `SWR-11`,`SWR-29` | `test/test_rusefi_can/` |
+| `UT-22` | `SYS-03`,`SWR-11`,`SWR-29` | `test/test_rusefi_can/` |
 | `UT-23` | `SWR-29`,`RSK-01` | `test/test_signal_model/` |
 | `IT-01`-`IT-15` | `DOC-30 §3` 参照 | 実機手順 |
 | `QT-01`-`QT-11` | `DOC-30 §4` 参照 | 実機・実車手順 |

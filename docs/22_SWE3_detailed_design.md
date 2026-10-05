@@ -362,10 +362,11 @@ HW 非依存、`UT-21`）で行う。`Lost` で針を消し、復帰時は LPF �
 ### 8.4 `SWD-13` λ センサの状態（`lib/signal_model/lambda_sensor_state.h`）
 
 `SWR-29` の判定。HW / LVGL 非依存の純粋関数で、`DisplayFilter` が毎フレーム呼ぶ（`UT-23`）。
+**λ は WBO の StandardData から取る**（`SYS-03` / `DEC-11`。2026-10-05 改訂。当初は ECU の `0x207`）。
 
 ```cpp
 enum class LambdaSensorState : uint8_t {
-    Ok, NoSignal, SensorOff, WarmingUp, Check, FaultNoHeat, FaultOverheat, FaultUnderheat
+    Ok, NoSignal, SensorOff, WarmingUp, Check, FaultNoHeat, FaultOverheat, FaultUnderheat, NoWbo
 };
 struct LambdaSensorInfo { LambdaSensorState state; bool hasTemp; float tempC; };
 LambdaSensorInfo classifyLambdaSensor(const Snapshot& snap);
@@ -373,16 +374,13 @@ LambdaSensorInfo classifyLambdaSensor(const Snapshot& snap);
 
 | 優先 | 条件 | 状態 |
 |---|---|---|
-| 1 | `Lambda1Valid`（`0x207` を受けるたびに 0 / 1 で更新）が `Lost` | `NoSignal` |
-| 2 | `Lambda1Valid` = 1 かつ `Lambda1` が `Lost` でない | `Ok` |
-| 3 | `WboStatus` が `Lost` でない | 0 -> `SensorOff`、1 -> `WarmingUp`、2 -> `Check`、3 / 4 / 5 -> `FaultNoHeat` / `FaultOverheat` / `FaultUnderheat`。`WboTempC` があれば温度つき |
-| 4 | `StatusFlags` の O2 ヒータ許可ビット | ON -> `WarmingUp`（温度なし）、OFF -> `SensorOff` |
+| 1 | `WboValid`（StandardData を受けるたびに 0 / 1）が `Lost` | ECU の `StatusFlags` が届いていれば `NoWbo`、届いていなければ `NoSignal` |
+| 2 | `WboValid` = 1 かつ `WboLambda` が `Lost` でない | `Ok` |
+| 3 | `WboStatus` | 0 -> `SensorOff`、1 -> `WarmingUp`、2 -> `Check`、3 / 4 / 5 -> 故障の種類。`WboTempC` があれば温度つき |
+| 4 | `WboStatus` が無い（StandardData だけ届く） | `Check` |
 
-追加した `SignalId`（NVS 互換のため `COUNT` の直前に追加）: `Lambda1Valid`、`WboValid`、`WboTempC`、`WboStatus`。
-`DisplayFilter` は `Lambda1Valid` が 0 のとき、`Lambda1` が `Stale` の範囲（2 秒未満）でも λ を無効とする（`SWR-29`）。
-
-デコードは `rusefi::decodeWboFrame(id, data, dlc)`（`SWD-01` と同じく純粋関数、`UT-22`）。`0x207` のデコードは
-`Lambda1Valid` も出すように拡張した（λ < 0.30 で 0）。
+`SignalId`: `WboLambda`（λ。Valid = 1 かつ有効範囲のときだけ更新）、`WboValid`、`WboTempC`、`WboStatus`、
+`Lambda1Valid`（ECU `0x207`、診断用）。`DisplayFilter` は `WboValid` が 0 のとき、`WboLambda` が `Stale` の範囲でも λ を無効とする。
 
 ## 9. アプリケーション起動シーケンス（`SWD-09`）
 
