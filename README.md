@@ -5,10 +5,20 @@ rusEFI と CAN で接続し、**空燃比（λ / AFR）と排気温度**を表�
 
 ハードウェアは **Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B**（ESP32-S3R8 / 2.1" 丸型 **480×480** / 静電容量タッチ）+ **M5Stack Unit Mini CAN**（トランシーバと 12V→5V 変換を兼ねる）。
 
+## このメータを使う方へ
+
+**[利用者ガイド（docs/user/）](docs/user/README.md) から始めてください。**
+Git や Claude Code を使ったことがなくても、Windows の PC で書き込み、色・警告温度・表示の種類・起動ロゴを
+好みに変えられるように書いています。Claude Code に「環境を作って」「針の色を青にして」のように頼むだけで進められます。
+
+あなたの設定は `user/` フォルダに置きます（[user/README.md](user/README.md)）。作者の更新を取り込んでも上書きされません。
+
+---
+
+以下は開発者向けの情報です。
+
 > 2026-10-01 に対象ハードを M5Stack Dial v1.1 から変更しました。経緯は [DOC-12 §8](docs/12_SYS3_system_arch.md)。
-> **コードはまだ M5Dial 向けのままです**（文書を先行改訂する運用のため。[DOC-40 §5](docs/40_SUP8_cm_dev_environment.md)）。
-> 下の `m5dial` 系のコマンドは現行コード（M5Dial）のものです。
-> **コードはまだ M5Dial 向けのままです**（文書を先行改訂する運用のため。[DOC-40 §5](docs/40_SUP8_cm_dev_environment.md)）。
+> LCD-2.1 向けの本番コードは `src/main_lcd21.cpp` / `lib/ui/` です。M5Dial 向けの `src/main.cpp`（`m5dial` 環境）は廃止予定です。
 
 | | |
 |---|---|
@@ -32,7 +42,7 @@ rusEFI と CAN で接続し、**空燃比（λ / AFR）と排気温度**を表�
 | P2 | ブリングアップ（M5Dial で CAN 受信を実機確認） | ✅ 完了 |
 | P2.5 | **ボード移行**（Waveshare ESP32-S3-Touch-LCD-2.1。文書改訂 → プラットフォーム選定 → 描画性能の実測） | ⏳ 実施中 |
 | P3 | ドメイン実装の完成 | — |
-| P4 | HMI 実装（LVGL + λ リング） | — |
+| P4 | HMI 実装（LVGL + λ リング / 指針式） | ⏳ 着手 |
 | P5 | 設定メニュー・診断ページ | — |
 | P6 | 実車検証 | — |
 
@@ -59,59 +69,51 @@ rusEFI と CAN で接続し、**空燃比（λ / AFR）と排気温度**を表�
 | [DOC-41](docs/41_SUP1_qa_plan.md) | 品質保証計画・コーディング規約 |
 | [DOC-50](docs/50_traceability.md) | トレーサビリティマトリクス |
 
-## クイックスタート
+## クイックスタート（開発者）
 
 ### 必要なもの
 
-- Python 3.11 以降
-- PlatformIO Core: `python -m pip install --user --upgrade platformio`
+- Windows 11、Python 3.11 以降、Git
+- PlatformIO Core と部品: `python -m pip install --user --upgrade platformio pyserial pillow numpy`
 - native 単体テストを PC で回す場合は C++ コンパイラ（Windows なら `scoop install gcc`）
+
+詳しくは [DOC-40 §2](docs/40_SUP8_cm_dev_environment.md)。
 
 ### ビルドとテスト
 
-```bash
-pio test -e native
+LCD-2.1 版は LVGL 9 + pioarduino で、**PowerShell から**ビルドします
+（Git Bash では pioarduino の導入に失敗します。[DOC-40 §2.3](docs/40_SUP8_cm_dev_environment.md)）。
+
+```powershell
+python -m platformio test -e native
 ```
 
-```bash
-pio run -e m5dial
+```powershell
+./tools/build.ps1
 ```
 
 ### 実機へ書き込み
 
-```bash
-pio run -e m5dial -t upload
-```
+書き込みと確認は CH343P の UART Type-C から行います（ネイティブ USB-C は使いません）。ポートは自動で探します。
 
-CAN を繋がずに UI を確認したい場合はシミュレータ版を書き込みます。
+| 環境 | 内容 | コマンド |
+|---|---|---|
+| `lcd21_sim` | CAN を繋がずに画面だけを動かすスイープデモ（λ 0.68 ⇄ 1.36 を 8.5 秒、EGT 300 ⇄ 960 °C） | `./tools/flash.ps1 -Sim` |
+| `lcd21` | 実 CAN 版（500 kbps。rusEFI の既定） | `./tools/flash.ps1` |
+| `lcd21_1m` | 実 CAN 版（1 Mbps。作者の車両用） | `./tools/flash.ps1 -Can1M` |
 
-```bash
-pio run -e m5dial_sim -t upload
-```
+書き込み後は `python tools/meter_log.py` で起動ログを読み、書き込み・ユーザー設定・CAN 受信を判定できます。
+デモはシリアル（115200）から 1 文字送ると操作できます: `h` 停止/再開、`0`〜`9` その位置で停止、`m` AFR/λ 切替、`v` 表示デザイン切替。
 
-PowerShell からは `tools/` のスクリプトが使えます。
+### 配布先ユーザー向けの仕組み
 
-```bash
-./tools/flash_and_monitor.ps1
-```
+| 置き場所 | 内容 |
+|---|---|
+| [docs/user/](docs/user/README.md) | 利用者ガイド（準備 → 導入 → 書き込み → 表示の変更 → 更新） |
+| [user/](user/README.md) | 利用者の設定 `user_config.h` とロゴ。git の管理対象外（雛形 `user_config.example.h` だけ管理） |
+| `.claude/skills/` | `setup-meter` / `flash-meter` / `customize-meter` / `update-meter`（利用者向け）、`bench-check`（開発者向け） |
 
-### LCD-2.1 版（開発中）
-
-対象ボード（Waveshare ESP32-S3-Touch-LCD-2.1）向けの実装は LVGL 9 + pioarduino で、**PowerShell から**ビルドします
-（Git Bash では pioarduino の導入に失敗します。詳細は [DOC-40 §2.3](docs/40_SUP8_cm_dev_environment.md)）。
-書き込みと確認は CH343P の UART Type-C（ネイティブ USB-C は使いません）から行います。
-
-CAN を繋がずに画面だけを確認するスイープデモ（λ が 8.5 秒で 0.68 ⇄ 1.36 を往復し、EGT は 300 ⇄ 960 °C）:
-
-```powershell
-python -m platformio run -e lcd21_sim -t upload --upload-port COM10
-```
-
-シリアル（115200）から 1 文字送ると操作できます: `h` 停止/再開、`0`〜`9` その位置で停止、`m` AFR/λ 切替、`v` 表示デザイン切替（指針式 A ⇄ リング）。
-1 秒ごとに fps と 1 フレームの描画時間も出ます（`DOC-30` の `QT-03`）。
-
-実 CAN 版は `-e lcd21` です（物理層を繋いでから。CAN の GPIO は実機未確認: `OPN-13`）。
-M5Dial 向けの `m5dial` / `m5dial_sim` は廃止予定です。
+仕様は `SWR-67` / `SWD-14`、運用は [DOC-40 §2.6](docs/40_SUP8_cm_dev_environment.md)。
 
 ## 配線
 
@@ -145,7 +147,7 @@ M5Dial 向けの `m5dial` / `m5dial_sim` は廃止予定です。
 
 ## ベンチで動作を確認する
 
-PCAN-USB から rusEFI のフレームを模擬送出し、M5Dial の表示を確認できます。
+PCAN-USB から rusEFI のフレームを模擬送出し、本体の表示を確認できます。
 実車がなくても表示の妥当性を判断できるので、UI を触ったら毎回これを回してください。
 
 ### Claude Code から
@@ -191,8 +193,8 @@ PowerShell なら `./tools/bench_check.ps1`。
 ### 前提
 
 - PCAN-USB を PC に接続し、CAN_H / CAN_L / GND を CAN Unit へ配線
-- M5Dial に **実 CAN 版**（`m5dial`）のファームウェアが入っていること
-  （`m5dial_sim` は CAN を一切読みません）
+- 本体に **実 CAN 版**（`lcd21`）のファームウェアが入っていること
+  （`lcd21_sim` は CAN を一切読みません）
 - ベンチは 2 ノードのみなので、終端は CAN Unit 側 120 Ω + PCAN 側 120 Ω（合計 60 Ω）
 
 ## ECU 側の前提設定
@@ -201,7 +203,7 @@ TunerStudio で以下を確認してください（[DOC-13 §5](docs/13_ICD_ruse
 
 - `enableVerboseCanTx` = true / `canWriteEnabled` = true
 - `verboseCanBaseAddress` = 0x200（既定）
-- `canBaudRate` = 500 kbps、`rusefiVerbose29b` = false
+- `canBaudRate` = 500 kbps（違う場合は `user/user_config.h` の `USER_CAN_BITRATE_KBPS` か `lcd21_1m`）、`rusefiVerbose29b` = false
 - `Lambda1` と `EGT1` のセンサが構成済みで、ゲージに値が出ていること
 
 ## ライセンス

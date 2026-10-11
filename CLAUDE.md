@@ -8,6 +8,21 @@ rusEFI と CAN 接続する車載メータ（**Waveshare ESP32-S3-Touch-LCD-2.1 
 > 移行の経緯と影響は `docs/12_SYS3_system_arch.md` §8 を読むこと。
 ASPICE をテーラリングした文書体系で管理している。**文書が仕様であり、コードは文書に従う。**
 
+## 配布先ユーザー（メータを使う人）から頼まれたとき
+
+メータを配布された人が、自分の PC でこのリポジトリを clone して Claude Code を使うことがある。
+「環境を作って」「書き込んで」「針の色を変えて」「最新版にして」のような依頼で、開発の話（要求・設計・テスト）が出てこなければ、相手は配布先ユーザーとみなす。
+
+- **Skill を使う**: `setup-meter`（環境構築）/ `flash-meter`（書き込み）/ `customize-meter`（表示の変更・ロゴ）/ `update-meter`（更新）。
+  手順書は `docs/user/`。
+- **書き換えてよいのは `user/` だけ**（`user_config.h`・`logo.png` と変換物）。`user_config.example.h` を含め、それ以外は変えない。
+  `user_config.h` でできないことは、できないと伝え、作者（GitHub の Issue）への相談を案内する。
+- 下の「変更の進め方」（docs-first の PR、`Refs:` 行、traceability の更新）は**求めない**。コミットも頼まれない限りしない。
+- 相手は Git と Claude Code の経験が少ない。平易な日本語で、1 回に 1 つの操作を頼む。用語は `docs/user/glossary.md` の言い方に合わせる。
+- ユーザーの変更を消す git 操作（`reset --hard`、`checkout -- .`、`clean`、`--force`）は、何が消えるかを説明して同意を得るまで行わない。
+- **「絶対に守ること」は配布先ユーザーとの作業にもそのまま適用する**（CAN へ送出しない、など）。
+- 配布先には PCAN も UVC カメラも無い前提で進める。画面の確認はユーザーに見てもらう。
+
 ## 最初に読むもの
 
 - `docs/README.md` — 文書体系の入口
@@ -74,8 +89,13 @@ python -m platformio run -e lcd21_1m -t upload --upload-port COM10
 1 秒ごとにシリアルへ fps・1 フレームの描画/flush 時間・画素数が出る。`m5dial` / `m5dial_sim` は M5Dial 用なので、LCD-2.1 には書き込まない。
 
 PowerShell からは `tools/test.ps1` / `tools/build.ps1` / `tools/flash.ps1` /
-`tools/monitor.ps1` / `tools/flash_and_monitor.ps1`。
+`tools/monitor.ps1` / `tools/flash_and_monitor.ps1`。既定は `lcd21`（`-Sim` で `lcd21_sim`、`-Can1M` で `lcd21_1m`、
+`-Board m5dial` で旧環境）。ポートを省くと CH343（VID 1A86）を探す。
 `pio` が PATH に無い場合は `python -m platformio` を使う。
+書き込み後の確認は `python tools/meter_log.py`（再起動して起動ログを読み、書き込み・ユーザー設定・CAN 受信を判定する）。
+
+`user/user_config.h`（git の管理対象外）があれば、その `USER_*` が起動時に既定値へ重なる（`SWR-67` / `SWD-14`）。
+作者の開発環境に検証用の `user_config.h` や `user/logo.*` を残したままにしない（ビルド結果が仕様の既定値と変わる）。
 
 `lcd21_bringup`（LCD-2.1 の計測用スケッチ）は pioarduino を使うので **PowerShell から** `pio run -e lcd21_bringup` を実行する
 （Git Bash では `idf_tools.py` が失敗する）。詳細は `docs/40_SUP8` §2.3。
@@ -92,6 +112,8 @@ PowerShell からは `tools/test.ps1` / `tools/build.ps1` / `tools/flash.ps1` /
 | `lib/ui/` | LVGL ポート・ページ（リング `PageLambda` / 指針式 A `PageNeedle`）・ウィジェット（`LambdaRing` / `BigNumber` / `DialFace` / `Needle`）・テーマ | LVGL 依存。**表示を変えるときは差分無効化を保つ**（`DEC-08`。全面再描画は 78 ms） |
 | `src/main.cpp` | 起動シーケンスとタスク生成 | |
 | `test/` | native 単体テスト | |
+| `user/` | 配布先ユーザーの設定 `user_config.h` とロゴ（`SWR-67`） | git の管理対象外。雛形 `user_config.example.h` と `README.md` だけ管理 |
+| `include/user_overrides.h` | `user_config.h` の取り込みと範囲検査（`SWD-14`） | |
 
 ## コーディング規約（要点）
 
