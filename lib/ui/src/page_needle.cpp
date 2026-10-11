@@ -13,9 +13,8 @@ namespace cm::ui {
 namespace {
 
 // DOC-23 §3.5
-constexpr uint32_t kNeedleHex = 0xFF7014;
-constexpr int kMainY          = 226;
-constexpr int kEgtY           = 300;
+constexpr int kMainY = 226;
+constexpr int kEgtY  = 300;
 // λ センサの状態は主数値と EGT の間（DOC-23 §6.1）。以前の (240, 362) は左下の目盛り数字「10」と重なった
 constexpr int kStatusY = 262;
 constexpr int kDiagY   = 452;
@@ -45,7 +44,7 @@ void PageNeedle::onCreate(lv_obj_t* parent, const Config& cfg) {
     lv_obj_remove_style_all(m_root);
     lv_obj_set_pos(m_root, 0, 0);
     lv_obj_set_size(m_root, layout::kWidth, layout::kHeight);
-    lv_obj_set_style_bg_color(m_root, lv_color_hex(0x060606), 0);  // DOC-23 §3.5 の背景
+    lv_obj_set_style_bg_color(m_root, lv_color_hex(color::kDialBg), 0);  // DOC-23 §3.5 の背景
     lv_obj_set_style_bg_opa(m_root, LV_OPA_COVER, 0);
     lv_obj_remove_flag(m_root, static_cast<lv_obj_flag_t>(LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE));
 
@@ -58,7 +57,7 @@ void PageNeedle::onCreate(lv_obj_t* parent, const Config& cfg) {
     m_egtNum.setCellScale(0xB0, kDegScale);  // '°'
 
     m_status = makeLabel(m_root, &cm_font_b612_label, color::kDanger, 300, kStatusY);
-    m_diag   = makeLabel(m_root, &cm_font_b612_small, 0x6A6A6A, 200, kDiagY);
+    m_diag   = makeLabel(m_root, &cm_font_b612_small, color::kDialDiag, 200, kDiagY);
     lv_label_set_text_static(m_status, m_lastStatus);  // 作成直後の "Text" を消す
     lv_label_set_text_static(m_diag, m_lastDiag);
 }
@@ -89,7 +88,8 @@ void PageNeedle::onUpdate(const Snapshot& snap, const Config& cfg) {
     char buf[16];
 
     // 針: Lost では出さない（古い位置を指したままにしない。SWR-49）。Stale は灰色
-    m_needle.set(m_face.angleOfLambda(v.lambda), v.lambdaStale ? color::kDisabled : kNeedleHex, v.hasLambda);
+    m_needle.set(m_face.angleOfLambda(v.lambda), v.lambdaStale ? color::kDisabled : color::kNeedle,
+                 v.hasLambda);
 
     formatMain(buf, sizeof(buf), v, cfg);
     m_mainNum.setText(buf, mainColorHex(v));

@@ -1,4 +1,4 @@
-# DOC-30 §3: PCAN ベンチで CAN パターンを流し、表示を目視確認する
+﻿# DOC-30 §3: PCAN ベンチで CAN パターンを流し、表示を目視確認する
 #   .\tools\bench_check.ps1                       実走模擬を 45 秒
 #   .\tools\bench_check.ps1 -Seconds 20
 #   .\tools\bench_check.ps1 -Mode sweep           青ゾーンも見たい

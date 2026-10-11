@@ -23,6 +23,7 @@
 #include "page_splash.h"
 #include "signal_store.h"
 #include "sweep_sim.h"
+#include "user_overrides.h"
 
 #ifndef CM_ENABLE_CAN_SIM
 #include "can_driver.h"
@@ -218,6 +219,35 @@ void printCanStatus(uint32_t nowMs, uint32_t frameUs) {
 }
 #endif
 
+// SWR-67: 配布先ユーザーの設定が効いたかを、書き込み後に Skill / 手順書がこの行で確かめる
+UserConfigResult g_userResult;
+
+void printGroups(const char* label, uint16_t mask) {
+    Serial.printf("  %s:", label);
+    if (mask == 0) {
+        Serial.print(" (none)");
+    }
+    for (uint8_t g = 0; g < static_cast<uint8_t>(UserGroup::Count); ++g) {
+        if (mask & (1u << g)) {
+            Serial.printf(" %s", userGroupName(static_cast<UserGroup>(g)));
+        }
+    }
+    Serial.println();
+}
+
+void printUserConfig() {
+    Serial.printf("user config: %s\n",
+                  CM_HAS_USER_CONFIG ? "present (user/user_config.h)" : "none (defaults)");
+    if (!CM_HAS_USER_CONFIG) {
+        return;
+    }
+    printGroups("applied", g_userResult.appliedMask);
+    if (g_userResult.rejectedMask != 0) {
+        // static_assert をすり抜けた組（既定値との組み合わせで単調性が崩れたなど）。既定値のまま動く
+        printGroups("REJECTED (kept defaults)", g_userResult.rejectedMask);
+    }
+}
+
 void printBanner() {
     Serial.printf("\ncircle_meter %s  (LCD-2.1 / LVGL %d.%d.%d)\n", CM_FW_VERSION, LVGL_VERSION_MAJOR,
                   LVGL_VERSION_MINOR, LVGL_VERSION_PATCH);
@@ -227,9 +257,11 @@ void printBanner() {
 #ifdef CM_ENABLE_CAN_SIM
     Serial.println("signal source: SIMULATOR (sweep)");
 #else
-    Serial.printf("signal source: CAN TX=GPIO%d RX=GPIO%d %u kbps\n", CM_TWAI_TX_GPIO, CM_TWAI_RX_GPIO,
-                  static_cast<unsigned>(g_cfg.canBitrateKbps));
+    Serial.printf("signal source: CAN TX=GPIO%d RX=GPIO%d %u kbps base 0x%03X\n", CM_TWAI_TX_GPIO,
+                  CM_TWAI_RX_GPIO, static_cast<unsigned>(g_cfg.canBitrateKbps),
+                  static_cast<unsigned>(g_cfg.canBaseId));
 #endif
+    printUserConfig();
 }
 
 }  // namespace
@@ -243,6 +275,8 @@ void setup() {
     // 作者の車両（MoTeC 併用）のバスは 1 Mbps だった（2026-10-05 実測。DOC-13 §1、env:lcd21_1m）
     g_cfg.canBitrateKbps = CM_CAN_BITRATE_KBPS;
 #endif
+    // SWR-67 / SWD-14: user/user_config.h の値を重ねる（範囲外の組は既定値のまま）
+    g_userResult = applyUserConfig(g_cfg, userConfigFromBuild());
     printBanner();
 
     // バックライト OFF のまま初期化する（DOC-23 §7）

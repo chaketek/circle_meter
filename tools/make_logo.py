@@ -3,6 +3,8 @@
 DOC-23 §7 / SWR-48。生成物は assets/logo.cpp / assets/logo.h。
 
 使い方:
+    python tools/make_logo.py --user               # 配布先ユーザー: user/logo.png -> user/logo.cpp / logo.h（SWR-67）
+    python tools/make_logo.py --user --invert      # 同上。白地に黒（+1 色）のロゴを黒地へ反転する
     python tools/make_logo.py                      # 既定（黒背景・輝度反転）
     python tools/make_logo.py --no-invert          # 元画像のまま（白背景）
     python tools/make_logo.py --max-width 200 --max-height 140
@@ -75,16 +77,45 @@ def to_rgb565(r: int, g: int, b: int) -> int:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--src", default=os.path.join(ROOT, "assets", "logo_src.png"))
-    ap.add_argument("--out-c", default=os.path.join(ROOT, "assets", "logo.cpp"))
-    ap.add_argument("--out-h", default=os.path.join(ROOT, "assets", "logo.h"))
-    ap.add_argument("--max-width", type=int, default=204)
-    ap.add_argument("--max-height", type=int, default=140)
+    ap.add_argument("--user", action="store_true",
+                    help="配布先ユーザー用: user/logo.png を LCD-2.1 の大きさで user/logo.cpp / logo.h へ。"
+                         "既定で反転せず黒地に置く（--invert で反転）")
+    ap.add_argument("--invert", action="store_true", help="--user のとき輝度反転する（白地に黒・1 色のロゴ向け）")
+    ap.add_argument("--src", default=None)
+    ap.add_argument("--out-c", default=None)
+    ap.add_argument("--out-h", default=None)
+    ap.add_argument("--max-width", type=int, default=None)
+    ap.add_argument("--max-height", type=int, default=None)
     ap.add_argument("--no-invert", action="store_true", help="輝度反転をしない（白背景のまま）")
     ap.add_argument("--bg", default=None, help="背景色 RRGGBB。既定は反転時 000000 / 非反転時 FFFFFF")
     args = ap.parse_args()
 
-    im = Image.open(args.src).convert("RGB")
+    if args.user:
+        # LCD-2.1 のスプラッシュの枠（DOC-23 §7）。背景は画面と同じ黒
+        user_dir = os.path.join(ROOT, "user")
+        args.src = args.src or os.path.join(user_dir, "logo.png")
+        args.out_c = args.out_c or os.path.join(user_dir, "logo.cpp")
+        args.out_h = args.out_h or os.path.join(user_dir, "logo.h")
+        args.max_width = args.max_width or 408
+        args.max_height = args.max_height or 174
+        args.no_invert = not args.invert
+        args.bg = args.bg or "000000"
+        if not os.path.isfile(args.src):
+            sys.exit(f"画像が見つかりません: {args.src}\nuser フォルダに logo.png という名前で置いてください")
+    else:
+        args.src = args.src or os.path.join(ROOT, "assets", "logo_src.png")
+        args.out_c = args.out_c or os.path.join(ROOT, "assets", "logo.cpp")
+        args.out_h = args.out_h or os.path.join(ROOT, "assets", "logo.h")
+        args.max_width = args.max_width or 204
+        args.max_height = args.max_height or 140
+
+    src = Image.open(args.src)
+    if src.mode in ("RGBA", "LA") or (src.mode == "P" and "transparency" in src.info):
+        # 透過 PNG は背景色の上に重ねる（透明部分を黒にする。--bg で変えられる）
+        bg_for_alpha = args.bg or ("FFFFFF" if args.no_invert else "000000")
+        under = Image.new("RGBA", src.size, "#" + bg_for_alpha)
+        src = Image.alpha_composite(under, src.convert("RGBA"))
+    im = src.convert("RGB")
 
     if not args.no_invert:
         im = unmix_invert(im)
@@ -126,10 +157,11 @@ def main() -> None:
             data.append(to_rgb565(r, g, b))
 
     name = "cm_logo"
+    src_rel = os.path.relpath(args.src, ROOT).replace(os.sep, "/")
     with open(args.out_h, "w", encoding="utf-8", newline="\n") as f:
         f.write(
             "// tools/make_logo.py が生成。手で編集しないこと。\n"
-            "// 元画像: assets/logo_src.png  (DOC-23 §7 / SWR-48)\n"
+            f"// 元画像: {src_rel}  (DOC-23 §7 / SWR-48)\n"
             "#pragma once\n\n"
             "#include <cstdint>\n\n"
             f"constexpr int      {name}_width  = {w};\n"
@@ -141,7 +173,7 @@ def main() -> None:
     with open(args.out_c, "w", encoding="utf-8", newline="\n") as f:
         f.write(
             "// tools/make_logo.py が生成。手で編集しないこと。\n"
-            "// 元画像: assets/logo_src.png  (DOC-23 §7 / SWR-48)\n"
+            f"// 元画像: {src_rel}  (DOC-23 §7 / SWR-48)\n"
             '#include "logo.h"\n\n'
             f"const uint16_t {name}_data[{w * h}] = {{\n"
         )

@@ -8,3 +8,8 @@ include/version.h
 Thumbs.db
 captures/
 backups/
+
+# 配布先ユーザーの設定とロゴ（SWR-67）。作者の更新（git pull）と衝突しないよう管理しない
+user/*
+!user/user_config.example.h
+!user/README.md

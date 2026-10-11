@@ -1,4 +1,4 @@
-# DOC-30 §3: PCAN から rusEFI verbose broadcast を模擬送出する（結合テスト IT-*）
+﻿# DOC-30 §3: PCAN から rusEFI verbose broadcast を模擬送出する（結合テスト IT-*）
 #   .\tools\can_send.ps1                      drive（実走模擬。20 秒周期で繰り返す）
 #   .\tools\can_send.ps1 -Mode sweep          λ を単純に往復させる
 #   .\tools\can_send.ps1 -Mode idle
