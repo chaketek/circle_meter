@@ -149,6 +149,17 @@ def main() -> None:
         im = canvas
         w += 1
 
+    if args.user:
+        # 変換結果を画像でも残す。Claude Code とユーザーが書き込む前に見て確かめるため（docs/user/06_logo.md）
+        preview = Image.new("RGB", (480, 480), bg)
+        preview.paste(im, ((480 - w) // 2, (480 - h) // 2))
+        # 丸い画面の外側を灰色にして、円の中に収まっているかを見やすくする
+        from PIL import ImageDraw
+        mask = Image.new("L", (480, 480), 255)
+        ImageDraw.Draw(mask).ellipse((0, 0, 479, 479), fill=0)
+        preview.paste((64, 64, 64), (0, 0, 480, 480), mask)
+        preview.save(os.path.join(os.path.dirname(args.out_c), "logo_preview.png"))
+
     data = []
     spx = im.load()
     for y in range(h):
@@ -183,6 +194,8 @@ def main() -> None:
 
     print(f"{w}x{h} -> {args.out_c} ({w * h * 2} bytes / {w * h * 2 / 1024:.1f} KB)")
     print(f"background = #{bg_hex}, invert = {not args.no_invert}")
+    if args.user:
+        print("preview  -> user/logo_preview.png（480x480 の画面に置いた見え方）")
 
 
 if __name__ == "__main__":
