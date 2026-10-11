@@ -5,7 +5,7 @@
 | 文書ID | `DOC-23` |
 | プロセス | SWE.2（ユーザインタフェース設計） |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-05 |
+| 最終更新 | 2026-10-11 |
 
 ---
 
@@ -247,7 +247,7 @@ CAN は受信しているが λ が無効のとき、`NO SIGNAL` の代わりに
 | ロゴ形式 | `assets/logo_src.png` を `tools/make_logo.py` で RGB565 の C++ 配列に変換して保持する。M5Dial 版は `assets/logo.cpp`（204x87 px / 34.7 KB）。**LCD-2.1 版は `assets/lcd21/logo.cpp` / `logo.h`（394x167 px / 129 KB）**。生成: `python tools/make_logo.py --out-c assets/lcd21/logo.cpp --out-h assets/lcd21/logo.h --max-width 408 --max-height 174`（元画像の縦横比で 394x167 になる）。Flash 上の const 配列を LVGL の `lv_image_dsc_t`（RGB565）から直接参照し、RAM へコピーしない |
 | アニメーション | 0.0–0.8 s フェードイン → 1.6 s 保持 → 0.6 s フェードアウト（合計 3.0 s）。**バックライトの LEDC PWM（GPIO6）のランプで実現**する（画素のアルファ合成は 16 bit 階調では縞が出るうえ CPU を食う） |
 | 短縮条件 | フェードイン完了時点で CAN 受信済みなら保持を 1.6 s → 0.4 s に短縮する |
-| 差し替え | `assets/logo_src.png` を置き換えて `python tools/make_logo.py` を実行する |
+| 差し替え | 作者: `assets/logo_src.png` を置き換えて上記の生成コマンドを実行する。**配布先ユーザー**: `user/logo.png` を置いて `python tools/make_logo.py --user` を実行する（`user/logo.cpp` / `logo.h` ができ、ビルドで自動的に差し替わる。`SWD-14`） |
 
 **注意**: `SYS-19`（初回描画 2.0 秒以内。2026-10-02 に 1.0 秒から改訂）を満たすため、ロゴ表示の前に
 バックライトを OFF のまま画面を黒でクリアし、ロゴ描画完了後にバックライトを ON にする
@@ -285,6 +285,25 @@ CAN は受信しているが λ が無効のとき、`NO SIGNAL` の代わりに
 | ゾーン LEAN_HEAVY | `CM_COLOR_LEAN_HEAVY` | `#FF2D2D` |
 | 警告（EGT WARN） | `CM_COLOR_WARN` | `#FFC400` |
 | 危険（EGT DANGER） | `CM_COLOR_DANGER` | `#FF2D2D` |
+
+### 8.1 配布先ユーザーが変えられる色（`SWR-67`）
+
+`user/user_config.h` で `USER_COLOR_*` を定義すると上書きできる。**既定値は §8 と §3.5 の仕様値のまま**。
+指針式 A の盤面・針・数字の色は、以前は `dial_face.cpp` / `page_needle.cpp` に直書きしていたものを `theme.h` の
+`color::kDial*` / `kNeedle` へ集めた（値は変えていない）。
+
+| `USER_` の名前 | 用途 | 既定 |
+|---|---|---|
+| `USER_COLOR_RICH_HEAVY` / `_RICH` / `_OPTIMAL` / `_LEAN` / `_LEAN_HEAVY` | λ ゾーンの色（リング・主数値） | §8 |
+| `USER_COLOR_EGT_NORMAL` / `USER_COLOR_WARN` / `USER_COLOR_DANGER` | EGT の通常・警告・危険（`NO SIGNAL` などの赤も `DANGER`） | `#E0E0E0` / §8 |
+| `USER_COLOR_TEXT` / `USER_COLOR_TEXT_SUB` | 主・副テキスト | §8 |
+| `USER_COLOR_BG` / `USER_COLOR_TRACK` | リングの背景・軌道 | §8 |
+| `USER_COLOR_DIAL_BG` | 指針式 A の盤面 | `#060606` |
+| `USER_COLOR_NEEDLE` | 指針式 A の針 | `#FF7014` |
+| `USER_COLOR_DIAL_RIM` / `_TICK` / `_NUMBER` / `_LABEL` / `_SMALL` | 指針式 A の外周線・目盛り・目盛り数字・銘板・小さい文字 | `#787878` / `#EBEBEB` / `#F0F0F0` / `#C8C8C8` / `#8C8C8C` |
+
+> 警告と危険の色（`WARN` / `DANGER` / `LEAN_HEAVY`）は、周辺視野で気づけること（`STK-01` / `SYS-16`）が目的。
+> 変える場合も、盤面・背景と見分けがつく明るい色にすること（手順書 `docs/user/05_customize.md` で注意する）。
 
 ## 9. フォント計画
 

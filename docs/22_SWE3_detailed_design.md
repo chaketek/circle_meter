@@ -5,7 +5,7 @@
 | 文書ID | `DOC-22` |
 | プロセス | SWE.3 詳細設計・ユニット構築（テーラリング: 公開 I/F 契約と状態遷移に限定） |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-05 |
+| 最終更新 | 2026-10-11 |
 
 ---
 
@@ -382,6 +382,34 @@ LambdaSensorInfo classifyLambdaSensor(const Snapshot& snap);
 `SignalId`: `WboLambda`（λ。Valid = 1 かつ有効範囲のときだけ更新）、`WboValid`、`WboTempC`、`WboStatus`、
 `Lambda1Valid`（ECU `0x207`、診断用）。`DisplayFilter` は `WboValid` が 0 のとき、`WboLambda` が `Stale` の範囲でも λ を無効とする。
 
+### 8.5 `SWD-14` ユーザー設定（`lib/signal_model/user_config_apply.h` / `include/user_overrides.h`）
+
+`SWR-67` の実装。配布先ユーザーが触るのは **`user/` フォルダだけ**（`user_config.h` と `logo.png`。どちらも git の管理対象外）。
+
+```cpp
+template <typename T> struct UserValue { bool set = false; T value{}; };
+struct UserConfig {
+    UserValue<bool> showAfr; UserValue<uint8_t> dialStyle, brightness; UserValue<float> stoich;
+    UserValue<float> richHeavyMax, richMax, optimalMax, leanMax;   // 4 つで 1 組
+    UserValue<uint16_t> egtWarnC, egtDangerC;                     // 2 つで 1 組
+    UserValue<uint16_t> canBitrateKbps, canBaseId;
+};
+struct UserConfigResult { uint16_t appliedMask; uint16_t rejectedMask; };  // UserGroup のビット
+UserConfigResult applyUserConfig(Config& cfg, const UserConfig& user);
+const char* userGroupName(UserGroup g);
+```
+
+| 項目 | 内容 |
+|---|---|
+| 重ねる順 | `defaultConfig()` -> ビルド環境のフラグ（`CM_CAN_BITRATE_KBPS`）-> `applyUserConfig()` |
+| 単位 | 組（`UserGroup`）ごとに候補へ書き込み、`validate(cfg, false)` が通らなければ**その組だけ元に戻して** `rejectedMask` に立てる。λ の色境界 4 つと EGT 閾値 2 つは組で扱う（単調性・大小関係があるため） |
+| 結果 | 最後に CRC を取り直す。`validate(cfg)` は常に真になる |
+| 値の出どころ | `include/user_overrides.h` が `user/user_config.h` を `__has_include` で取り込み、`#define USER_*` から `UserConfig` を作る（`cm::userConfigFromBuild()`）。ドメイン層は `user_config.h` を読まない（単体テストが利用者の設定に左右されないように） |
+| ビルド時の検査 | `user_overrides.h` の `static_assert` が単独の範囲（輝度 1-5、色 0x000000-0xFFFFFF、ビットレート 250/500/1000 など）と、同じ組の中の大小関係を日本語のメッセージで止める |
+| 配色 | `theme.h` が同じヘッダを取り込み、`USER_COLOR_*` が定義されていればその値を使う（`DOC-23 §8.1`） |
+| 起動ロゴ | `tools/make_logo.py --user` が `user/logo.png` から `user/logo.cpp` / `logo.h` を作る。`tools/select_logo.py`（pre スクリプト）が `user/logo.cpp` があればそれをビルドに入れ、`-I user` を `-I assets/lcd21` より前に置いて `logo.h` も差し替わる |
+| 起動ログ | `user config: present / none`、反映した組と戻した組の名前を出す |
+
 ## 9. アプリケーション起動シーケンス（`SWD-09`）
 
 ```mermaid
@@ -422,3 +450,5 @@ LVGL 初期化より前に `CanDriver::begin()` とタスク生成を行う。
 | `CM_BOARD_LCD21` | 未定義 | Waveshare ESP32-S3-Touch-LCD-2.1 向け。`lib/hal/display_hal_lcd21.cpp` が有効になる |
 | `CM_FW_VERSION` | git describe | ビルド時に埋め込み（`SWR-102`） |
 | `CM_LOG_LEVEL` | `3` (INFO) | シリアルログレベル |
+| `CM_CAN_BITRATE_KBPS` | 未定義（500） | CAN のビットレートを上書きする。`lcd21_1m` 環境が 1000 を与える（作者の車両用）。`user/user_config.h` の `USER_CAN_BITRATE_KBPS` がさらに優先 |
+| `USER_*` | 未定義 | `user/user_config.h` で定義する配布先ユーザーの設定（`SWD-14`、雛形は `user/user_config.example.h`） |
