@@ -1,6 +1,9 @@
 # circle_meter — Claude Code 向けプロジェクト指示
 
-rusEFI と CAN 接続する車載メータ（M5Stack Dial v1.1 / ESP32-S3）のファームウェア。
+rusEFI と CAN 接続する車載メータ（**Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B** / ESP32-S3R8 / 480×480 丸型 RGB 並列）のファームウェア。
+
+> **2026-10-01: 対象ハードを M5Stack Dial v1.1 から変更した。** 文書は改訂済み、**コードはまだ M5Dial 向け**。
+> 移行の経緯と影響は `docs/12_SYS3_system_arch.md` §8 を読むこと。
 ASPICE をテーラリングした文書体系で管理している。**文書が仕様であり、コードは文書に従う。**
 
 ## 最初に読むもの
@@ -12,8 +15,9 @@ ASPICE をテーラリングした文書体系で管理している。**文書�
 
 ## 絶対に守ること
 
-1. **CAN バスへ送信しない。** `twai_transmit()` を書かない。TWAI は `TWAI_MODE_LISTEN_ONLY`
-   以外で初期化しない。CI の `guard` ジョブが混入を検出する（`RSK-06` / `SYS-07`）。
+1. **CAN バスへフレームを送出しない。** `twai_transmit()` を書かない。TWAI は `TWAI_MODE_NORMAL`
+   で初期化し ACK は返す（`RSK-10`）。`TWAI_MODE_NO_ACK` は禁止。
+   CI の `guard` ジョブが混入を検出する（`RSK-06` / `SYS-07` / `DEC-04`）。
 2. **信号喪失時に古い値を返さない。** `Snapshot::get()` は `Lost` のとき `false` を返し
    出力を変更しない。この契約を壊す API（値と鮮度を別々に返すもの）を追加しない（`RSK-01`）。
 3. **ドメイン層を HW に依存させない。** `lib/rusefi_can/` と `lib/signal_model/` に
@@ -77,8 +81,11 @@ C++17 / `.clang-format`（Google ベース・インデント 4・列幅 110）/ 
 
 `docs/11_SYS2_system_req.md` §4 の `OPN-*` を参照。特に以下は実装を進める前に実測で確定する。
 
-- `OPN-01` 所有している CAN Unit の型番と終端抵抗の有無
-- `OPN-02` M5Dial PORT.B の GPIO 割当（G1/G2）と Grove 線色の対応、TX/RX の向き
+- `OPN-15` **ビルドプラットフォームと表示ライブラリの選定**。IDF 4.4 では RGB パネルの bounce buffer が使えない見込み。pioarduino 等の第三者プラットフォームを使うなら採用前に確認を取る
+- `OPN-12` **480×480 RGB パネルでの実描画性能**。`SYS-12`（30 fps）を満たせるか。フレームバッファは PSRAM 必須で `DEC-05` が変わっている。満たせないと `DOC-23` から作り直し
+- `OPN-13` CAN を GPIO20(TX) / GPIO19(RX)（12PIN の D+/D−）に割り当てる案の実機検証。起動直後にバスへ何も出ないこと（`IT-04`）
+- `OPN-14` 12PIN の `VBus` へ Mini CAN の 5V を入れて成立するか、本体の消費電流
+- `OPN-01` Mini CAN Unit の終端抵抗の有無
 - `OPN-03` rusEFI 側で `Lambda1` / `EGT1` が構成済みか、`canSleepPeriodMs` の実設定値
 
 これらが未確定のまま「たぶんこうだろう」で実装を進めない。
@@ -90,3 +97,15 @@ C++17 / `.clang-format`（Google ベース・インデント 4・列幅 110）/ 
 - `lib/ui/` 一式（`LvglPort` / `PageManager` / `IPage` 実装 / `LambdaRing`）
 - `lib/hal/` の `InputDriver` / `DisplayHal` / `NvsStore` / `Diagnostics`
 - `assets/` のロゴ・数字フォント（`OPN-05`）
+
+## 表示の目視確認（UVC カメラ）
+
+LCD は外付けの UVC カメラ（`5MP USB Camera`）で撮影できる構成になっている。
+**表示の確認は撮影した画像を Read で見て行うこと**（人に「見えましたか」と聞く前に自分で見る）。
+手順は `docs/40_SUP8_cm_dev_environment.md` §2.4.1。**PC 内蔵カメラ（`Integrated Camera`）は使わない。**
+
+## 実機の接続（LCD-2.1）
+
+- 書き込み・ログは **CH343P の UART Type-C**（`COM10`）。ネイティブ USB-C にはケーブルを挿さない（CAN と競合: `RSK-13`）
+- PlatformIO の esptool を直接呼ぶときは `~/.platformio/penv/Scripts/python.exe` から（システムの Python だと `click` で落ちる）
+- スクラッチファイルは指定のスクラッチパッドに置く（Git Bash の `/tmp` と Python の `/tmp` は別の場所を指す）
