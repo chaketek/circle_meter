@@ -10,7 +10,10 @@ namespace cm {
 
 /// 構造体レイアウトを変えたら必ずインクリメントすること。
 /// 不一致の保存データは既定値で上書きされる（SWR-81）。
-constexpr uint16_t kConfigVersion = 1;
+constexpr uint16_t kConfigVersion = 2;  // 2: dialStyle を追加（2026-10-04）
+
+/// SYS-21: λ ページの表示デザイン。値を変えない（NVS に保存される）。追加は Count の直前へ。
+enum class DialStyle : uint8_t { Ring = 0, NeedleA = 1, Count };
 
 struct Config {
     uint16_t version = kConfigVersion;
@@ -24,9 +27,10 @@ struct Config {
     LambdaZoneConfig zones{0.75f, 0.85f, 1.03f, 1.10f};  ///< DOC-23 §3.2
     EgtConfig egt{850, 920};                             ///< DOC-23 §4
 
-    uint8_t brightness = 4;     ///< 1-5 (DOC-23 §10)
-    bool buzzerEnabled = true;  ///< EGT 危険時のブザー
-    uint8_t lastPage   = 0;     ///< SYS-35
+    uint8_t brightness = 4;                                         ///< 1-5 (DOC-23 §10)
+    bool buzzerEnabled = true;                                      ///< EGT 危険時のブザー
+    uint8_t lastPage   = 0;                                         ///< SYS-35
+    uint8_t dialStyle  = static_cast<uint8_t>(DialStyle::NeedleA);  ///< SYS-21。既定は指針式 A
 
     // ---- CAN ----
     uint16_t canBaseId      = 0x200;  ///< SYS-02

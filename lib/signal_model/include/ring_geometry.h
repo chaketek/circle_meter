@@ -9,6 +9,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <initializer_list>
 
 namespace cm {
 
@@ -71,6 +72,37 @@ inline IntRect annularSectorBounds(int cx, int cy, int rInner, int rOuter, float
         }
     }
 
+    IntRect out;
+    out.x1 = static_cast<int16_t>(std::floor(minX)) - marginPx;
+    out.y1 = static_cast<int16_t>(std::floor(minY)) - marginPx;
+    out.x2 = static_cast<int16_t>(std::ceil(maxX)) + marginPx;
+    out.y2 = static_cast<int16_t>(std::ceil(maxY)) + marginPx;
+    return out;
+}
+
+/// 浮かせた針（二等辺三角形）を長さ方向に segCount 等分したときの、segIndex 番目の区間の外接矩形（DEC-10）。
+/// 針は半径 rBase で幅 wBase、半径 rTip で幅 0（尖る）。斜めの針の外接矩形は大きいので、
+/// 区間ごとに分けて無効化すると描き直す面積が数分の 1 になる（UT-20）。
+inline IntRect needleSegmentBounds(int cx, int cy, float angleDeg, float rBase, float rTip, float wBase,
+                                   int segIndex, int segCount, int marginPx = 2) {
+    const float rad = angleDeg * kPi / 180.0f;
+    const float dx = std::cos(rad), dy = std::sin(rad);
+    const float nx = -dy, ny = dx;
+    const float t0 = static_cast<float>(segIndex) / static_cast<float>(segCount);
+    const float t1 = static_cast<float>(segIndex + 1) / static_cast<float>(segCount);
+    float minX = 1e9f, minY = 1e9f, maxX = -1e9f, maxY = -1e9f;
+    for (float t : {t0, t1}) {
+        const float r  = rBase + (rTip - rBase) * t;
+        const float hw = 0.5f * wBase * (1.0f - t);
+        for (float s : {-1.0f, 1.0f}) {
+            const float x = static_cast<float>(cx) + r * dx + s * hw * nx;
+            const float y = static_cast<float>(cy) + r * dy + s * hw * ny;
+            minX          = (x < minX) ? x : minX;
+            maxX          = (x > maxX) ? x : maxX;
+            minY          = (y < minY) ? y : minY;
+            maxY          = (y > maxY) ? y : maxY;
+        }
+    }
     IntRect out;
     out.x1 = static_cast<int16_t>(std::floor(minX)) - marginPx;
     out.y1 = static_cast<int16_t>(std::floor(minY)) - marginPx;

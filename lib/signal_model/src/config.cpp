@@ -70,6 +70,7 @@ uint32_t computeCrc(const Config& c) {
     a.add(c.brightness);
     a.add(c.buzzerEnabled);
     a.add(c.lastPage);
+    a.add(c.dialStyle);
     a.add(c.canBaseId);
     a.add(c.canBitrateKbps);
     a.add(c.canExtendedId);
@@ -101,6 +102,8 @@ bool validate(const Config& c, bool checkCrc) {
         return false;
 
     if (c.brightness < 1 || c.brightness > 5)
+        return false;
+    if (c.dialStyle >= static_cast<uint8_t>(DialStyle::Count))
         return false;
 
     if (c.canBaseId > 0x7FF - 11 && !c.canExtendedId)

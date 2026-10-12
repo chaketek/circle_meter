@@ -1,5 +1,5 @@
 // tools/make_font.py が生成。手で編集しないこと。
-// cm_font_afr: Montserrat Bold 136 px / 4 bpp / 非圧縮 / 主数値 AFR（例 14.7） (DOC-23 §9)
+// cm_font_afr: Montserrat-Bold.ttf 136 px / 4 bpp / 非圧縮 / 主数値 AFR（例 14.7） (DOC-23 §9)
 #include "lvgl.h"
 
 static const uint8_t glyph_bitmap[37233] = {

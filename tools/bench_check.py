@@ -25,6 +25,7 @@ import os
 import re
 import subprocess
 import sys
+import tempfile
 import time
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -86,6 +87,23 @@ def find_port(explicit: str = None) -> str:
              "  --port COM10 のように明示してください。")
 
 
+def open_without_reset(port: str) -> "serial.Serial":
+    """DTR / RTS を下げたままポートを開く。
+
+    pyserial は既定で開いた瞬間に DTR / RTS を有効にする。LCD-2.1 は CH343 の RTS が EN（リセット）に
+    つながる自動書き込み回路なので、普通に開くと本体がリセットされ、起動直後の数秒（オープニング中の
+    受信の溜まり・最初の全面描画）が採点に混ざっていた（2026-10-05）。
+    """
+    ser = serial.Serial()
+    ser.port = port
+    ser.baudrate = 115200
+    ser.timeout = 0.5
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    return ser
+
+
 def reset_board(port: str) -> None:
     """CH343 の RTS で EN を引いて本体をリセットする（LCD-2.1 の自動書き込み回路を使う）。"""
     try:
@@ -137,7 +155,8 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--mode", default="drive",
-                    choices=["drive", "idle", "sweep", "egt-danger", "dropout", "burst", "invalid"])
+                    choices=["drive", "idle", "sweep", "egt-danger", "dropout", "burst", "invalid",
+                             "wbo-warmup", "wbo-fault", "ecu-warmup", "startup"])
     ap.add_argument("--seconds", type=float, default=45.0, help="観測時間（既定 45 秒 = 実走模擬 2 周期強）")
     ap.add_argument("--port", default=None, help="本体のシリアルポート（既定は自動検出）")
     ap.add_argument("--board", default="lcd21", choices=["lcd21", "m5dial"],
@@ -147,7 +166,8 @@ def main() -> None:
     ap.add_argument("--flash", action="store_true", help="先にビルドして書き込む")
     ap.add_argument("--sim", action="store_true", help="--flash のとき CAN シミュレータ版を書き込む")
     ap.add_argument("--listen", action="store_true", help="IT-04: 送信せずバスを観測するだけ")
-    ap.add_argument("--expect-fps", type=float, default=120.0, help="期待する受信フレームレート")
+    ap.add_argument("--expect-fps", type=float, default=160.0,
+                    help="期待する受信フレームレート（ECU 6 + WBO 2 フレーム x 20 Hz）")
     args = ap.parse_args()
 
     if args.flash:
@@ -168,14 +188,31 @@ def main() -> None:
     port = find_port(args.port)
     print(f"== ベンチ確認 mode={args.mode} port={port} {args.seconds:.0f}秒 ==")
 
+    # 送信側の出力はファイルへ逃がす。
+    # subprocess.PIPE にして読まずに放置すると、Windows のパイプバッファ（4KB）が
+    # 20 秒ほどで埋まり、送信側が書き込みでブロックして CAN 送出が止まる。
+    # そうなると「受信が途中で止まった」ように見えて、原因を本体側と誤認する。
+    sender_log = os.path.join(tempfile.gettempdir(), "circle_meter_pcan_send.log")
+    log_fp = open(sender_log, "w", encoding="utf-8", errors="replace")
     sender = subprocess.Popen(
         [sys.executable, "-u", os.path.join(HERE, "pcan_send.py"),
          "--mode", args.mode, "--channel", args.channel],
-        cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding="utf-8",
-        errors="replace")
+        cwd=ROOT, stdout=log_fp, stderr=subprocess.STDOUT)
+
+    def sender_output() -> str:
+        try:
+            log_fp.flush()
+        except Exception:
+            pass
+        try:
+            with open(sender_log, encoding="utf-8", errors="replace") as fp:
+                return fp.read()
+        except Exception:
+            return ""
+
     time.sleep(2.0)
     if sender.poll() is not None:
-        print(sender.stdout.read())
+        print(sender_output())
         sys.exit("PCAN 送信が開始できませんでした")
 
     rows, none_rows, lines = [], 0, 0
@@ -183,7 +220,7 @@ def main() -> None:
         ser = None
         for _ in range(10):
             try:
-                ser = serial.Serial(port, 115200, timeout=0.5)
+                ser = open_without_reset(port)
                 break
             except Exception:
                 time.sleep(1.2)
@@ -222,11 +259,20 @@ def main() -> None:
             rows.append(row)
         ser.close()
     finally:
+        sender_died = sender.poll() is not None
         sender.terminate()
         try:
             sender.wait(timeout=3)
         except Exception:
             sender.kill()
+        log_fp.close()
+
+    # 送信側が観測中に落ちていたら、受信が途切れたのは本体のせいではない
+    if sender_died:
+        print("\n**PCAN 送信プロセスが観測中に終了しました。** 判定は本体の評価になりません。")
+        print("--- 送信側の出力 ---")
+        print(sender_output())
+        sys.exit(2)
 
     if not rows:
         sys.exit("本体から 1 行も受信できませんでした。配線・ポート・ファームウェア（実 CAN 版か）を確認してください。")
@@ -244,19 +290,32 @@ def main() -> None:
     if args.mode not in ("dropout", "invalid"):
         lo, hi = args.expect_fps * 0.9, args.expect_fps * 1.1
         if args.mode == "burst":
-            lo, hi = 900, 1400
+            lo, hi = 1300, 1900  # 8 フレーム x 200 Hz = 1600
         c.add("受信レート", all(lo <= f <= hi for f in fps), f"{min(fps)} - {max(fps)} f/s")
         c.add("信号喪失の誤検出 (RSK-01)", none_rows == 0, f"{none_rows} 行 / {len(rows)} 行")
-    c.add("不明 ID / DLC 不正", all(r["unk"] == 0 and r["dlc"] == 0 for r in rows)
-          if args.mode != "invalid" else True,
-          f"unk={max(r['unk'] for r in rows)} dlc={max(r['dlc'] for r in rows)}")
-    c.add("受信キュー溢れ (SYS-06)", all(r["ovf"] == 0 for r in rows),
-          f"ovf={max(r['ovf'] for r in rows)}")
+    # 本体のカウンタは起動からの累積。本体をリセットせずに続けて試験すると前の試験の分が残るので、
+    # この試験の間の増分で判定する（2026-10-05: 無効値試験の直後の途絶試験で誤判定した）
+    def delta(key):
+        return rows[-1][key] - rows[0][key]
+
+    c.add("不明 ID / DLC 不正", (delta("unk") == 0 and delta("dlc") == 0) if args.mode != "invalid" else True,
+          f"この試験の増分 unk={delta('unk')} dlc={delta('dlc')}")
+    c.add("受信キュー溢れ (SYS-06)", delta("ovf") == 0, f"この試験の増分 ovf={delta('ovf')}")
     c.add("TWAI エラーカウンタ", all(r["tec"] == 0 and r["rec"] == 0 for r in rows),
           f"tec={max(r['tec'] for r in rows)} rec={max(r['rec'] for r in rows)}")
     if snaps:
         c.add("スナップショット取得失敗", max(snaps) == 0, f"snapFail={max(snaps)}")
-    if ages:
+    if args.mode == "dropout":
+        # IT-02: 送信を止めている間に必ず Lost（"--"）になり、古い値を出さないこと。再開で復帰すること
+        lost_ages = [r["ageL"] for r in rows if r["lam"] is None and r["ageL"] is not None]
+        c.add("途絶で信号喪失になる (IT-02 / RSK-01)", none_rows > 0 and all(a >= 2000 for a in lost_ages),
+              f"喪失 {none_rows} 行、喪失時の ageL 最小 {min(lost_ages) if lost_ages else '-'} ms（2000 以上で正）")
+        c.add("再開で復帰する", any(r["lam"] is not None for r in rows[-8:]), "末尾 8 行に受信値あり")
+    elif args.mode == "invalid":
+        # UT-09 の実機確認: λ=0 / EGT=0 は採用しない（ずっと Lost）。DLC 不足は破棄して数える
+        c.add("無効値を採用しない (SYS-42 / RSK-09)", none_rows == len(rows), f"喪失 {none_rows} 行 / {len(rows)} 行")
+        c.add("DLC 不足を破棄して数える (SWR-06)", delta("dlc") > 0, f"この試験の増分 dlc={delta('dlc')}")
+    elif ages:
         c.add("信号の鮮度", max(ages) < 500, f"ageL 最大 {max(ages)} ms")
     if draws:
         worst_fps = 1000000 // max(draws)
@@ -280,6 +339,13 @@ def main() -> None:
             print(f"    {name:<18} {n:3d}")
 
     c.report()
+
+    # 受信が途中で止まっていないか（送信側の停止と本体の不具合を取り違えないため）
+    stalled = [i for i in range(1, len(rows)) if rows[i]["fps"] == 0]
+    if stalled:
+        print(f"\n**受信が観測中に {len(stalled)} 回 f/s=0 になりました。**")
+        print("  ageL が単調に増えていれば、止まったのは送信側でバス上にフレームが無い状態です。")
+        print(f"  送信側の出力: {sender_log}")
 
     if args.mode == "drive":
         print("""

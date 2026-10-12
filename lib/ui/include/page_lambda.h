@@ -4,7 +4,7 @@
 #include "big_number.h"
 #include "ipage.h"
 #include "lambda_ring.h"
-#include "units.h"
+#include "display_filter.h"
 
 namespace cm::ui {
 
@@ -18,7 +18,7 @@ public:
     bool onEvent(InputEvent ev) override;
 
     /// 下端に出す診断文字列（fps など）。空なら何も出さない。NO SIGNAL のほうが優先される。
-    void setDiagText(const char* text);
+    void setDiagText(const char* text) override;
 
 private:
     void applyMainFont(bool showAfr);
@@ -30,26 +30,23 @@ private:
     lv_obj_t* m_unit      = nullptr;
     BigNumber m_mainNum;
     BigNumber m_egtNum;
-    lv_obj_t* m_status = nullptr;
+    lv_obj_t* m_status = nullptr;  // 下部: 診断文字列
+    lv_obj_t* m_sensor = nullptr;  // 中央: λ センサの状態（SWR-51）
     LambdaRing m_ring;
 
     bool m_showAfr = true;
     char m_diag[24]{};
 
-    // SWR-24: 表示用の値は 1 次 IIR を通す。UI は 30 Hz で回り、CAN は約 20 Hz で届くので、
-    // フィルタが間を補間して、毎フレーム値が動く（SYS-12 の最悪条件）。生値は SignalStore が保持している。
-    Lpf1 m_lpfLambda;
-    Lpf1 m_lpfEgt;
-    bool m_lambdaSeeded     = false;
-    bool m_egtSeeded        = false;
-    uint32_t m_lastUpdateMs = 0;
-    bool m_hasLastUpdate    = false;
+    // SWR-24 / RSK-01: 値の取り出し・LPF・鮮度の判定は全デザインで共通（DisplayFilter）
+    DisplayFilter m_filter;
 
     // 前回設定した内容。変わらないものを LVGL に渡さない（無効化 = 再描画を避ける）
     char m_lastFreshness[8]{};
     char m_lastUnit[8]{};
-    char m_lastStatus[24]{};
+    char m_lastStatus[32]{};
     uint32_t m_lastStatusColor = 0xFFFFFFFF;
+    char m_lastSensor[32]{};
+    uint32_t m_lastSensorColor = 0xFFFFFFFF;
 };
 
 }  // namespace cm::ui

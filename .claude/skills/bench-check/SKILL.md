@@ -14,6 +14,7 @@ PCAN から rusEFI の CAN フレームを模擬送出し、本体のシリア�
 
 - PCAN-USB が PC に接続され、CAN_H / CAN_L / GND が CAN Unit（Mini CAN）に配線されている
 - CAN Unit の Grove が本体の 12PIN に配線されている: GND-GND、5V-VBus、TX-D+ (GPIO20)、RX-D- (GPIO19)
+  （本体側ケーブルの線色。現在の個体限定: 黒 GND / 赤 5V / 黄 CAN TX / 緑 CAN RX。Grove 側の RX は白）
   （`README.md` の配線表。**ベンチでは CAN Unit の端子台に 12V を入れない**: 本体の USB 給電と 5V がぶつかる）
 - 本体は **CH343 の UART Type-C** で PC に接続（`COM10`、VID 1A86）。**ネイティブ USB-C は挿さない**（`RSK-13`）
 - **実 CAN 版**のファームウェア（`lcd21`）が書き込まれている
@@ -39,6 +40,8 @@ python tools/bench_check.py --seconds 45
 | 途絶検出 (`IT-02`) | `python tools/bench_check.py --mode dropout --seconds 25` |
 | 高負荷 (`IT-03`) | `python tools/bench_check.py --mode burst --seconds 20` |
 | 無効値の扱い | `python tools/bench_check.py --mode invalid --seconds 15` |
+| λ センサのウォームアップ表示 (`IT-17`) | `python tools/bench_check.py --mode wbo-warmup --seconds 32`（故障は `wbo-fault`、WBO なしは `ecu-warmup`）。シリアルの `sensor=` が OFF -> WARMUP -> CHECK -> OK と推移すること |
+| キーオンからの流れを見せる（デモ） | `python tools/pcan_send.py --mode startup`（停止 -> 加熱 -> 確認の 18 秒のあと、実走模擬を繰り返す） |
 | **送信しないこと (`IT-04`)** | `python tools/bench_check.py --listen --seconds 30` |
 
 `--listen` は観測を始めてから**本体を RTS でリセット**し、起動直後（ROM ブートローダ・USB PHY が
@@ -63,7 +66,7 @@ D+/D- を握っている間）も含めてバスに何も出ないことを見�
 
 | 判定項目 | 基準 | 根拠 |
 |---|---|---|
-| 受信レート | 120 f/s ±10 %（burst は 900–1400） | 6 フレーム × 20 Hz |
+| 受信レート | 160 f/s ±10 %（burst は 1300–1900） | ECU 6 + WBO 2 フレーム × 20 Hz（λ は WBO から取る: `SYS-03`） |
 | 信号喪失の誤検出 | `(none)` が 0 行 | `RSK-01`（最上位ハザード） |
 | 不明 ID / DLC 不正 | 0 | `SWR-04` / `SWR-06` |
 | 受信キュー溢れ | `ovf=0` | `SYS-06` |
