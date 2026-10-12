@@ -34,7 +34,20 @@
       "Bash(python tools/bench_check.py:*)",
       "Bash(tools/bench_check.ps1:*)",
       "PowerShell(./tools/bench_check.ps1:*)",
-      "Bash(python tools/lcd_capture.py:*)"
+      "Bash(python tools/lcd_capture.py:*)",
+      "PowerShell(python -m platformio run:*)",
+      "PowerShell(python -m platformio --version)",
+      "PowerShell(python -m platformio device list:*)",
+      "PowerShell(python tools/meter_log.py:*)",
+      "Bash(python tools/meter_log.py:*)",
+      "PowerShell(python tools/make_logo.py --user:*)",
+      "PowerShell(git status:*)",
+      "PowerShell(git log:*)",
+      "PowerShell(git diff:*)",
+      "PowerShell(git rev-parse:*)",
+      "PowerShell(git branch --show-current)",
+      "PowerShell(git --version)",
+      "PowerShell(python --version)"
     ],
     "deny": []
   }

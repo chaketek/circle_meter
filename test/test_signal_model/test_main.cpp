@@ -1,5 +1,5 @@
 // SWE.4 ユニット検証: 信号モデル（鮮度・単位換算・設定）
-// UT-05 〜 UT-09, UT-11 〜 UT-21, UT-23  (docs/30_test_strategy.md §2)
+// UT-05 〜 UT-09, UT-11 〜 UT-21, UT-23, UT-24  (docs/30_test_strategy.md §2)
 #include <unity.h>
 
 #include <atomic>
@@ -19,6 +19,7 @@
 #include "signal_store.h"
 #include "sweep_sim.h"
 #include "units.h"
+#include "user_config_apply.h"
 
 using namespace cm;
 
@@ -884,6 +885,92 @@ void test_UT23_invalid_lambda_hides_value_immediately() {
     TEST_ASSERT_EQUAL(static_cast<int>(LambdaSensorState::WarmingUp), static_cast<int>(v.sensor.state));
 }
 
+// ---------------------------------------------------------------- UT-24 ユーザー設定（SWR-67 / SWD-14）
+
+namespace {
+bool hasBit(uint16_t mask, UserGroup g) {
+    return (mask & (1u << static_cast<uint8_t>(g))) != 0;
+}
+}  // namespace
+
+void test_UT24_nothing_set_keeps_defaults() {
+    Config cfg               = defaultConfig();
+    const Config def         = defaultConfig();
+    const UserConfigResult r = applyUserConfig(cfg, UserConfig{});
+    TEST_ASSERT_EQUAL_UINT16(0, r.appliedMask);
+    TEST_ASSERT_EQUAL_UINT16(0, r.rejectedMask);
+    TEST_ASSERT_EQUAL_UINT32(def.crc32, cfg.crc32);
+    TEST_ASSERT_TRUE(validate(cfg));
+}
+
+void test_UT24_valid_values_are_applied() {
+    Config cfg = defaultConfig();
+    UserConfig u;
+    u.showAfr                = {true, false};
+    u.dialStyle              = {true, static_cast<uint8_t>(DialStyle::Ring)};
+    u.brightness             = {true, 2};
+    u.stoich                 = {true, 9.0f};   // E85 相当
+    u.optimalMax             = {true, 1.05f};  // 1 つだけ指定。残りの境界は既定値
+    u.egtWarnC               = {true, 800};
+    u.egtDangerC             = {true, 900};
+    u.canBitrateKbps         = {true, 1000};
+    u.canBaseId              = {true, 0x300};
+    const UserConfigResult r = applyUserConfig(cfg, u);
+    TEST_ASSERT_EQUAL_UINT16(0, r.rejectedMask);
+    TEST_ASSERT_FALSE(cfg.showAfr);
+    TEST_ASSERT_EQUAL_UINT8(static_cast<uint8_t>(DialStyle::Ring), cfg.dialStyle);
+    TEST_ASSERT_EQUAL_UINT8(2, cfg.brightness);
+    TEST_ASSERT_EQUAL_FLOAT(9.0f, cfg.stoich);
+    TEST_ASSERT_EQUAL_FLOAT(1.05f, cfg.zones.optimalMax);
+    TEST_ASSERT_EQUAL_FLOAT(0.85f, cfg.zones.richMax);
+    TEST_ASSERT_EQUAL_UINT16(800, cfg.egt.warnC);
+    TEST_ASSERT_EQUAL_UINT16(900, cfg.egt.dangerC);
+    TEST_ASSERT_EQUAL_UINT16(1000, cfg.canBitrateKbps);
+    TEST_ASSERT_EQUAL_UINT16(0x300, cfg.canBaseId);
+    for (uint8_t g = 0; g < static_cast<uint8_t>(UserGroup::Count); ++g) {
+        TEST_ASSERT_TRUE(hasBit(r.appliedMask, static_cast<UserGroup>(g)));
+    }
+    TEST_ASSERT_TRUE(validate(cfg));
+}
+
+void test_UT24_out_of_range_group_keeps_default() {
+    Config cfg = defaultConfig();
+    UserConfig u;
+    u.brightness             = {true, 9};      // 1-5 の外
+    u.canBitrateKbps         = {true, 300};    // 250 / 500 / 1000 以外
+    u.showAfr                = {true, false};  // これは正しい
+    const UserConfigResult r = applyUserConfig(cfg, u);
+    TEST_ASSERT_TRUE(hasBit(r.rejectedMask, UserGroup::Brightness));
+    TEST_ASSERT_TRUE(hasBit(r.rejectedMask, UserGroup::CanBitrate));
+    TEST_ASSERT_TRUE(hasBit(r.appliedMask, UserGroup::ShowAfr));
+    TEST_ASSERT_EQUAL_UINT8(defaultConfig().brightness, cfg.brightness);
+    TEST_ASSERT_EQUAL_UINT16(defaultConfig().canBitrateKbps, cfg.canBitrateKbps);
+    TEST_ASSERT_FALSE(cfg.showAfr);
+    TEST_ASSERT_TRUE(validate(cfg));
+}
+
+void test_UT24_non_monotonic_zones_rejected_as_a_whole() {
+    Config cfg = defaultConfig();
+    UserConfig u;
+    u.richHeavyMax           = {true, 0.80f};  // これ単独なら正しい
+    u.richMax                = {true, 1.20f};  // optimalMax (1.03) を越えて単調性を破る
+    const UserConfigResult r = applyUserConfig(cfg, u);
+    TEST_ASSERT_TRUE(hasBit(r.rejectedMask, UserGroup::Zones));
+    TEST_ASSERT_EQUAL_FLOAT(0.75f, cfg.zones.richHeavyMax);  // 組ごと戻る
+    TEST_ASSERT_EQUAL_FLOAT(0.85f, cfg.zones.richMax);
+    TEST_ASSERT_TRUE(validate(cfg));
+}
+
+void test_UT24_egt_warn_above_danger_rejected() {
+    Config cfg = defaultConfig();
+    UserConfig u;
+    u.egtWarnC               = {true, 950};  // 既定の危険 920 より上
+    const UserConfigResult r = applyUserConfig(cfg, u);
+    TEST_ASSERT_TRUE(hasBit(r.rejectedMask, UserGroup::Egt));
+    TEST_ASSERT_EQUAL_UINT16(850, cfg.egt.warnC);
+    TEST_ASSERT_TRUE(validate(cfg));
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_UT05_zone_boundaries_exact);
@@ -943,5 +1030,10 @@ int main(int, char**) {
     RUN_TEST(test_UT23_wbo_states_with_temperature);
     RUN_TEST(test_UT23_ecu_lambda_is_not_used);
     RUN_TEST(test_UT23_invalid_lambda_hides_value_immediately);
+    RUN_TEST(test_UT24_nothing_set_keeps_defaults);
+    RUN_TEST(test_UT24_valid_values_are_applied);
+    RUN_TEST(test_UT24_out_of_range_group_keeps_default);
+    RUN_TEST(test_UT24_non_monotonic_zones_rejected_as_a_whole);
+    RUN_TEST(test_UT24_egt_warn_above_danger_rejected);
     return UNITY_END();
 }

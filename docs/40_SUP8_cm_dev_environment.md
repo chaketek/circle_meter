@@ -5,7 +5,7 @@
 | 文書ID | `DOC-40` |
 | プロセス | SUP.8 構成管理 / SUP.9 問題解決 / SUP.10 変更要求 / MAN.3 プロジェクト管理 / SPL.2 リリース |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-05 |
+| 最終更新 | 2026-10-11 |
 
 ---
 
@@ -57,14 +57,14 @@
 | C++ コンパイラ | native 単体テスト用。Windows は `scoop install gcc`（確認済: MinGW GCC 15.2） | `g++ --version` |
 | `python-can` | PCAN からの CAN 送出（`DOC-30 §3`） | `python -c "import can"` |
 | Pillow | ロゴ変換 `tools/make_logo.py` | `python -c "import PIL"` |
-| clang-format | CI の lint ゲートをローカルで再現する | `python -m pip install --user clang-format` |
+| clang-format | CI の lint ゲートをローカルで再現する。**23.1.1 に固定**（CI と同じ版。版が違うと整形結果が変わる） | `python -m pip install --user clang-format==23.1.1` |
 | PEAK PCAN ドライバ | PCAN-USB を使う結合テスト | PCAN-View が起動すること |
 | エディタ | VS Code + PlatformIO IDE 拡張（任意） | — |
 
 ### 2.2 初回セットアップ
 
 ```bash
-python -m pip install --user --upgrade platformio python-can pillow clang-format
+python -m pip install --user --upgrade platformio python-can pillow numpy pyserial clang-format==23.1.1
 ```
 
 インストール後、`pio` が PATH に無い場合は `python -m platformio` で代用できる。
@@ -142,6 +142,26 @@ ffmpeg -f dshow -video_size 1280x720 -i video="5MP USB Camera" -frames:v 1 -upda
 50,209,8,A9,00,00,00,00,00,00,00
 ```
 
+### 2.6 配布先ユーザー向けの手順書と Skill（`SWR-67`）
+
+メータを配布したユーザー（Git と Claude Code の経験が少ない人）が、Windows で環境を作り、好みの表示に変えて
+書き込めるようにする。**開発文書（この `docs/`）とは入口を分ける**。
+
+| 置き場所 | 内容 |
+|---|---|
+| `docs/user/` | 配布先ユーザー向けの手順書（準備 -> Claude Code と Git の導入 -> コードの入手 -> 書き込みと配線 -> 表示を変える -> ロゴ -> 更新 -> 困ったとき・用語集） |
+| `user/` | 配布先ユーザーが触る唯一の場所。`user_config.h`（設定）と `logo.png`（起動ロゴ）、変換後の `logo.cpp` / `logo.h`。**git の管理対象外**（`.gitignore`）。雛形 `user/user_config.example.h` と `user/README.md` だけを管理する |
+| `.claude/skills/setup-meter` | 環境構築（Git・Python・PlatformIO の確認と導入、初回ビルド、COM ポートの確認、`user_config.h` の作成） |
+| `.claude/skills/flash-meter` | 書き込み（デモ / 車両用 500k / 1M）と、起動ログでの確認（ビットレート不一致の見分け） |
+| `.claude/skills/customize-meter` | 会話で聞き取って `user/user_config.h` だけを編集し、ビルド・書き込みまで行う。ロゴの変換も |
+| `.claude/skills/update-meter` | `git pull` で最新版を取り込み、雛形に増えた項目を知らせ、ビルド・書き込みする |
+
+`user/` を管理対象外にするのは、作者の更新（`git pull`）とユーザーの変更が衝突しないようにするため。
+仕様上の既定値（`defaultConfig()`・`theme.h`）は文書の値のまま変えず、ユーザー設定は起動時に重ねるだけにする（`SWD-14`）。
+
+`tools/build.ps1` / `flash.ps1` / `monitor.ps1` / `flash_and_monitor.ps1` は `lcd21` 系を既定にした
+（`-Sim` で `lcd21_sim`、`-Can1M` で `lcd21_1m`、`-Board m5dial` で旧環境）。ポートを省くと CH343（VID 1A86）を探す。
+
 ## 3. ブランチ戦略・コミット規約
 
 ### 3.1 ブランチ
@@ -204,7 +224,7 @@ flowchart LR
 
 | ジョブ | 実行環境 | 内容 | 失敗時 |
 |---|---|---|---|
-| `lint` | ubuntu-latest | `clang-format --dry-run -Werror` | マージ不可 |
+| `lint` | ubuntu-latest | `clang-format --dry-run -Werror`（pip の 23.1.1。§2.1） | マージ不可 |
 | `guard` | ubuntu-latest | `bash tools/guard.sh`（`twai_transmit` の混入 `RSK-06`、`TWAI_MODE_NO_ACK` `RSK-10`、ドメイン層の HW 依存 `DEC-06`、スケーリング定数の直書き `SWD-01`） | マージ不可 |
 | `test` | ubuntu-latest | `pio test -e native` | マージ不可 |
 | `build` | ubuntu-latest | `pio run -e m5dial -e m5dial_sim` + Flash/RAM 使用量をジョブサマリに出力 | マージ不可 |

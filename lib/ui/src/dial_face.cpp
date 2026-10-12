@@ -25,12 +25,6 @@ constexpr int kMarkApexR     = 187;
 constexpr int kMarkBaseR     = 177;
 constexpr float kMarkHalfDeg = 2.4f;
 
-constexpr uint32_t kRimHex   = 0x787878;
-constexpr uint32_t kTickHex  = 0xEBEBEB;
-constexpr uint32_t kNumHex   = 0xF0F0F0;
-constexpr uint32_t kLabelHex = 0xC8C8C8;
-constexpr uint32_t kSmallHex = 0x8C8C8C;
-
 constexpr float kSectorStepDeg = 15.0f;  // LambdaRing と同じ理由で 24 分割以内（DEC-08）
 
 // 目盛り数字の文字列。描画タスクは後で実行されるので、静的領域に置く
@@ -158,7 +152,7 @@ void DialFace::draw(lv_layer_t* layer, int32_t originX, int32_t originY) const {
     arc.width       = kRimW;
     arc.start_angle = 0;
     arc.end_angle   = 360;
-    arc.color       = lv_color_hex(m_alarm ? color::kDanger : kRimHex);
+    arc.color       = lv_color_hex(m_alarm ? color::kDanger : color::kDialRim);
     arc.opa         = LV_OPA_COVER;
     if (overlapsAnnulus(clip, cx, cy, kRimR - kRimW, kRimR)) {
         lv_draw_arc(layer, &arc);
@@ -186,7 +180,7 @@ void DialFace::draw(lv_layer_t* layer, int32_t originX, int32_t originY) const {
     const float afrHi  = m_cfg.ringHi * stoich;
     lv_draw_line_dsc_t line;
     lv_draw_line_dsc_init(&line);
-    line.color = lv_color_hex(kTickHex);
+    line.color = lv_color_hex(color::kDialTick);
     line.opa   = LV_OPA_COVER;
     for (int half = static_cast<int>(std::ceil(afrLo * 2.0f - 1e-3f));
          half <= static_cast<int>(afrHi * 2.0f + 1e-3f); ++half) {
@@ -207,7 +201,7 @@ void DialFace::draw(lv_layer_t* layer, int32_t originX, int32_t originY) const {
         const int afrInt = half / 2;
         if (major && (afrInt % 2) == 0 && afrInt >= 0 && afrInt < 32) {
             const lv_point_precise_t p = polar(cx, cy, deg, static_cast<float>(kNumeralR));
-            drawText(layer, g_numText[afrInt], &cm_font_b612_scale, kNumHex, p.x, p.y, 24);
+            drawText(layer, g_numText[afrInt], &cm_font_b612_scale, color::kDialNumber, p.x, p.y, 24);
         }
     }
 
@@ -215,7 +209,7 @@ void DialFace::draw(lv_layer_t* layer, int32_t originX, int32_t originY) const {
     const float degStoich = angleOfLambda(1.0f);
     lv_draw_triangle_dsc_t tri;
     lv_draw_triangle_dsc_init(&tri);
-    tri.bg_color = lv_color_hex(kTickHex);
+    tri.bg_color = lv_color_hex(color::kDialTick);
     tri.bg_opa   = LV_OPA_COVER;
     tri.p[0]     = polar(cx, cy, degStoich, static_cast<float>(kMarkApexR));
     tri.p[1]     = polar(cx, cy, degStoich - kMarkHalfDeg, static_cast<float>(kMarkBaseR));
@@ -225,9 +219,9 @@ void DialFace::draw(lv_layer_t* layer, int32_t originX, int32_t originY) const {
     }
 
     // 銘板（針が通らない下部の空きと中心付近だけ）
-    drawText(layer, "EGT", &cm_font_b612_small, 0x828282, cx, cy + 92, 30);
-    drawText(layer, "A/F", &cm_font_b612_label, kLabelHex, cx, cy + 156, 40);
-    drawText(layer, "AIR FUEL RATIO", &cm_font_b612_small, kSmallHex, cx, cy + 184, 70);
+    drawText(layer, "EGT", &cm_font_b612_small, color::kDialEgtLabel, cx, cy + 92, 30);
+    drawText(layer, "A/F", &cm_font_b612_label, color::kDialLabel, cx, cy + 156, 40);
+    drawText(layer, "AIR FUEL RATIO", &cm_font_b612_small, color::kDialSmall, cx, cy + 184, 70);
 }
 
 }  // namespace cm::ui
