@@ -5,7 +5,7 @@
 | 文書ID | `DOC-50` |
 | プロセス | SYS.2/SYS.3/SWE.1/SWE.2 の双方向トレーサビリティ |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-11 |
+| 最終更新 | 2026-10-12 |
 
 ---
 
@@ -28,6 +28,7 @@
 | `STK-13` CAN へフレームを送出しない | `SYS-07` | `SWR-01`,`SWR-1A` | `SWA-01`/`SWD-05` CanDriver, `DEC-04` | `IT-04`,`IT-15`, 静的チェック `S2`/`S3` |
 | `STK-14` 設定の保持 | `SYS-20`,`SYS-35` | `SWR-80`-`SWR-82` | `SWA-06`,`SWA-09` | `UT-13`,`IT-05` |
 | `STK-04` / `STK-11` / `STK-14` 配布先での変更 | `SYS-01`,`SYS-02`,`SYS-14`,`SYS-20`,`SYS-21` | `SWR-67` | `SWD-14` ユーザー設定 | `UT-24` |
+| `CST-01` M5Dial も配布対象 | `SYS-03`,`SYS-22` | `SWR-68` | `SWD-15` M5Dial 版、`SWD-13`、`SWD-14` | `UT-25`,`IT-18` |
 | `STK-15` USB 1 本で更新 | `SYS-54` | — | `DOC-40 §2.4` | `IT-11` |
 | `STK-16` 拡張可能な構造 | `SYS-60` | `SWR-60` | `SWD-07` IPage | レビュー（`DOC-41 §3.2`） |
 | — （開発効率） | `SYS-61`,`SYS-62` | `SWR-92`,`SWR-100`-`SWR-102` | `SWA-12` Diagnostics | `IT-12`,`IT-13` |
@@ -79,6 +80,7 @@
 | `UT-22` | `SYS-03`,`SWR-11`,`SWR-29` | `test/test_rusefi_can/` |
 | `UT-23` | `SWR-29`,`RSK-01` | `test/test_signal_model/` |
 | `UT-24` | `SWR-67` | `test/test_signal_model/` |
+| `UT-25` | `SWR-51`,`SWR-68` | `test/test_signal_model/` |
 | `IT-01`-`IT-15` | `DOC-30 §3` 参照 | 実機手順 |
 | `QT-01`-`QT-11` | `DOC-30 §4` 参照 | 実機・実車手順 |
 
