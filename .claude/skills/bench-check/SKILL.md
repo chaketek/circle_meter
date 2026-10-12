@@ -1,21 +1,24 @@
 ---
 name: bench-check
-description: PCAN ベンチで CAN パターンを M5Dial に流し、表示を目視確認する。実走模擬（アイドル→加速→定常→燃料カット→アイドル）を流して外周バーの色変化や数値の動きを見たいとき、また DOC-30 の結合テスト IT-01/02/03/04/15 や適格性確認 QT-02/QT-03/QT-05 を実行したいときに使う。「ベンチで流して」「実走模擬を走らせて」「目視チェックしたい」「IT-03 を実行して」などで起動する。
+description: PCAN ベンチで CAN パターンを本体（Waveshare LCD-2.1。旧 M5Dial も可）に流し、シリアルを採点して表示を UVC カメラで確認する。実走模擬（アイドル→加速→定常→燃料カット→アイドル）を流して外周バーの色変化や数値の動きを見たいとき、また DOC-30 の結合テスト IT-01/02/03/04/15 や適格性確認 QT-02/QT-03/QT-05 を実行したいときに使う。「ベンチで流して」「実走模擬を走らせて」「目視チェックしたい」「IT-03 を実行して」などで起動する。
 ---
 
 # ベンチ目視チェック
 
-PCAN から rusEFI の CAN フレームを模擬送出し、M5Dial のシリアル出力を採点したうえで、
-画面の目視確認項目を提示する。仕様は `docs/30_test_strategy.md` §3。
+PCAN から rusEFI の CAN フレームを模擬送出し、本体のシリアル出力を採点したうえで、
+画面を UVC カメラで撮影して確認する。仕様は `docs/30_test_strategy.md` §3。
 
 ## 前提の確認
 
 実行前にユーザーに確認する（すでに繋がっていることが会話から明らかなら省略してよい）。
 
-- PCAN-USB が PC に接続され、CAN_H / CAN_L / GND が M5Stack CAN Unit に配線されている
-- M5Dial が USB 接続されている
-- **実 CAN 版**のファームウェア（`m5dial`）が書き込まれている
-  - `m5dial_sim` はシミュレータ版で CAN を一切読まない。入っていたら `--flash` を付ける
+- PCAN-USB が PC に接続され、CAN_H / CAN_L / GND が CAN Unit（Mini CAN）に配線されている
+- CAN Unit の Grove が本体の 12PIN に配線されている: GND-GND、5V-VBus、TX-D+ (GPIO20)、RX-D- (GPIO19)
+  （`README.md` の配線表。**ベンチでは CAN Unit の端子台に 12V を入れない**: 本体の USB 給電と 5V がぶつかる）
+- 本体は **CH343 の UART Type-C** で PC に接続（`COM10`、VID 1A86）。**ネイティブ USB-C は挿さない**（`RSK-13`）
+- **実 CAN 版**のファームウェア（`lcd21`）が書き込まれている
+  - `lcd21_sim` はスイープデモで CAN を一切読まない。入っていたら PowerShell から書き込む:
+    `python -m platformio run -e lcd21 -t upload --upload-port COM10`
 - ベンチは 2 ノードのみなので、終端は CAN Unit 側 120Ω + PCAN 側 120Ω（合計 60Ω）
 
 ## 実行
@@ -24,12 +27,12 @@ PCAN から rusEFI の CAN フレームを模擬送出し、M5Dial のシリア�
 python tools/bench_check.py --seconds 45
 ```
 
-ポートは VID 303A から自動検出する。うまくいかなければ `--port COM7` を足す。
+ポートは VID 1A86（LCD-2.1 の CH343）、なければ 303A（M5Dial）から自動検出する。うまくいかなければ `--port COM10` を足す。
 
 | やりたいこと | コマンド |
 |---|---|
 | 実走模擬を目視確認（既定） | `python tools/bench_check.py` |
-| 最新をビルド・書き込んでから | `python tools/bench_check.py --flash` |
+| 最新をビルド・書き込んでから | `python tools/bench_check.py --flash`（既定は `lcd21`。M5Dial は `--board m5dial`） |
 | 短く済ませる | `python tools/bench_check.py --seconds 20` |
 | 青ゾーンも見たい | `python tools/bench_check.py --mode sweep` |
 | EGT 警告の確認 (`QT-05`) | `python tools/bench_check.py --mode egt-danger --seconds 40` |
@@ -38,7 +41,9 @@ python tools/bench_check.py --seconds 45
 | 無効値の扱い | `python tools/bench_check.py --mode invalid --seconds 15` |
 | **送信しないこと (`IT-04`)** | `python tools/bench_check.py --listen --seconds 30` |
 
-`--listen` は**本機の電源だけを入れた状態**で実行すること（送信は行わない）。
+`--listen` は観測を始めてから**本体を RTS でリセット**し、起動直後（ROM ブートローダ・USB PHY が
+D+/D- を握っている間）も含めてバスに何も出ないことを見る（`OPN-13` / `RSK-13`）。リセットしたくなければ `--no-reset`。
+電源投入そのものも確認したいときは、観測中に本体の USB ケーブルを抜き差しする。
 
 ## 結果の扱い
 
@@ -47,8 +52,10 @@ python tools/bench_check.py --seconds 45
 1. **自動判定の表をそのままユーザーに見せる。** 数値を言い換えたり丸めたりしない。
 2. 不合格があれば、どの判定がなぜ落ちたかを `docs/30_test_strategy.md` の該当 `IT-*` と
    結びつけて説明する。推測で原因を断定せず、必要なら計測を足して切り分ける。
-3. **目視チェックリストはユーザーにしか判定できない。** 画面がどう見えたかを尋ねる。
-   こちらから「問題なく見えているはずです」と書かない。
+3. **画面は UVC カメラで撮って自分で見る**（`python tools/lcd_capture.py --out <scratchpad>/x.jpg`、CLAUDE.md）。
+   カメラは画面を 180° 回転して写し、白を水色に寄せる。動いている数字は露光で重なって写るので、
+   形の確認はデモを止めた状態で行う。カメラで判断できないもの（実物の色味・眩しさ）だけをユーザーに尋ね、
+   「問題なく見えているはずです」とは書かない。
 4. リリース前の実行なら、結果を `docs/test_records/<日付>_<用途>.md` に記録する
    （書式は `docs/test_records/README.md`）。
 

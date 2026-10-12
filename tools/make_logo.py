@@ -10,6 +10,11 @@ DOC-23 §7 / SWR-48。生成物は assets/logo.cpp / assets/logo.h。
 既定で輝度を反転するのは、HMI が黒基調（DOC-23 P3）であり、
 白背景のロゴをそのまま出すと丸型画面に白い四角が浮いてしまうため。
 反転しても赤（スクリプト部）は色相を保つように処理している。
+
+反転は「画素ごとに白地へ黒インクと色インク（赤）が何割ずつ乗っているか」を求め、黒地の上で
+黒インク -> 白、色インク -> そのままの色、として塗り直す方式（unmix_invert）。
+画素単位で「有彩色なら残す / 無彩色なら反転」と切り替えると、赤字の縁の薄いピンク（赤と白の中間色）が
+反転されずに残り、黒地で明るい縁取りが浮いてジャギーに見える（2026-10-04 に修正）。
 """
 
 import argparse
@@ -17,25 +22,51 @@ import os
 import sys
 
 try:
+    import numpy as np
     from PIL import Image
 except ImportError:
-    sys.exit("Pillow が必要です: python -m pip install --user pillow")
+    sys.exit("Pillow と numpy が必要です: python -m pip install --user pillow numpy")
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 
-def is_chromatic(r: int, g: int, b: int, threshold: int = 40) -> bool:
-    """有彩色（この画像では赤のスクリプト部分）かどうか。"""
-    return (max(r, g, b) - min(r, g, b)) > threshold
+def estimate_ink(arr) -> "np.ndarray":
+    """色インク（スクリプトの赤）の色を推定する。彩度の高い画素の中央値。"""
+    chroma = arr.max(axis=2) - arr.min(axis=2)
+    strong = arr[chroma > 120 / 255.0]  # arr は 0.0-1.0
+    if len(strong) == 0:
+        return np.array([1.0, 0.0, 0.0])
+    return np.median(strong, axis=0)
 
 
-def invert_luma(px: tuple) -> tuple:
-    """無彩色のみ明暗を反転する。有彩色はそのまま残す。"""
-    r, g, b = px[:3]
-    if is_chromatic(r, g, b):
-        return (r, g, b)
-    return (255 - r, 255 - g, 255 - b)
+def unmix_invert(im: "Image.Image") -> "Image.Image":
+    """白地の画像を、黒インクと色インクの 2 色の混合とみなして分解し、黒地に塗り直す。
+
+    画素 p = 白 * (1 - k - c) + 黒 * k + 色 * c  を (k, c) について最小二乗で解く。
+    塗り直しは  out = 白 * k + 色 * c（黒地なので残りは 0）。
+    中間色（アンチエイリアスの縁）も k / c の割合として保たれるので、縁がなめらかに黒地へ溶ける。
+    """
+    arr = np.asarray(im.convert("RGB")).astype(np.float64) / 255.0
+    ink = estimate_ink(arr)
+    d = 1.0 - arr                      # 白からの差 = k * (1,1,1) + c * (1 - ink)
+    u = np.ones(3)
+    v = 1.0 - ink
+    # 2x2 の正規方程式
+    uu, uv, vv = u @ u, u @ v, v @ v
+    du = d @ u
+    dv = d @ v
+    det = uu * vv - uv * uv
+    k = (du * vv - dv * uv) / det
+    c = (dv * uu - du * uv) / det
+    k = np.clip(k, 0.0, 1.0)
+    c = np.clip(c, 0.0, 1.0)
+    total = k + c
+    over = total > 1.0
+    k[over] /= total[over]
+    c[over] /= total[over]
+    out = k[..., None] * u + c[..., None] * ink
+    return Image.fromarray(np.clip(out * 255.0 + 0.5, 0, 255).astype(np.uint8), "RGB")
 
 
 def to_rgb565(r: int, g: int, b: int) -> int:
@@ -56,10 +87,7 @@ def main() -> None:
     im = Image.open(args.src).convert("RGB")
 
     if not args.no_invert:
-        px = im.load()
-        for y in range(im.height):
-            for x in range(im.width):
-                px[x, y] = invert_luma(px[x, y])
+        im = unmix_invert(im)
 
     bg_hex = args.bg or ("FFFFFF" if args.no_invert else "000000")
     bg = tuple(int(bg_hex[i : i + 2], 16) for i in (0, 2, 4))

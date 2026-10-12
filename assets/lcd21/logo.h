@@ -4,7 +4,7 @@
 
 #include <cstdint>
 
-constexpr int      cm_logo_width  = 390;
+constexpr int      cm_logo_width  = 394;
 constexpr int      cm_logo_height = 167;
 constexpr uint16_t cm_logo_bg     = 0x0000;
-extern const uint16_t cm_logo_data[65130];
+extern const uint16_t cm_logo_data[65798];

@@ -1,4 +1,4 @@
-"""PCAN ベンチで CAN パターンを流し、M5Dial のシリアル出力を採点する。
+"""PCAN ベンチで CAN パターンを流し、本体（LCD-2.1 / M5Dial）のシリアル出力を採点する。
 
 DOC-30 の `IT-*` / `QT-02` をいつも同じ手順で実行するためのオーケストレータ。
 送信（tools/pcan_send.py）と受信ログの採点を 1 コマンドにまとめてある。
@@ -8,12 +8,13 @@ DOC-30 の `IT-*` / `QT-02` をいつも同じ手順で実行するためのオ�
     python tools/bench_check.py --mode egt-danger     QT-05 の警告確認
     python tools/bench_check.py --mode dropout        IT-02 途絶検出
     python tools/bench_check.py --mode burst          IT-03 高負荷
-    python tools/bench_check.py --listen              IT-04 本機が送信しないこと
+    python tools/bench_check.py --listen              IT-04 本機が送信しないこと（観測開始後に本体をリセット）
     python tools/bench_check.py --flash               先に最新をビルドして書き込む
 
 前提:
   - PCAN-USB を PC に接続し、CAN_H / CAN_L / GND を M5Stack CAN Unit へ配線
-  - M5Dial を USB 接続（実 CAN 版のファームウェアが入っていること）
+  - 本体を USB 接続（実 CAN 版のファームウェアが入っていること。LCD-2.1 は lcd21、M5Dial は m5dial）
+    LCD-2.1 は CH343 の UART Type-C（VID 1A86）、M5Dial はネイティブ USB（VID 303A）で自動検出する
   - ベンチは 2 ノードのみ。終端は CAN Unit 側 120 ohm + PCAN 側 120 ohm（合計 60 ohm）
 
 終了コード 0 = 全判定合格。
@@ -75,20 +76,39 @@ def zone_of(lam: float) -> str:
 def find_port(explicit: str = None) -> str:
     if explicit:
         return explicit
-    # ESP32-S3 のネイティブ USB は VID 0x303A
-    for p in list_ports.comports():
-        if p.vid == 0x303A:
-            return p.device
+    # LCD-2.1 は CH343P（VID 0x1A86）、M5Dial は ESP32-S3 のネイティブ USB（VID 0x303A）
+    for vid in (0x1A86, 0x303A):
+        for p in list_ports.comports():
+            if p.vid == vid:
+                return p.device
     ports = [p.device for p in list_ports.comports()]
-    sys.exit(f"M5Dial が見つかりません（VID 303A）。検出されたポート: {ports or 'なし'}\n"
-             "  --port COM7 のように明示してください。")
+    sys.exit(f"本体が見つかりません（VID 1A86 / 303A）。検出されたポート: {ports or 'なし'}\n"
+             "  --port COM10 のように明示してください。")
 
 
-def run_flash(sim: bool) -> None:
-    env = "m5dial_sim" if sim else "m5dial"
+def reset_board(port: str) -> None:
+    """CH343 の RTS で EN を引いて本体をリセットする（LCD-2.1 の自動書き込み回路を使う）。"""
+    try:
+        ser = serial.Serial(port, 115200, timeout=0.2)
+        ser.setDTR(False)
+        ser.setRTS(True)
+        time.sleep(0.15)
+        ser.setRTS(False)
+        ser.close()
+        print(f"   {port} をリセットしました（観測中に起動させる）")
+    except Exception as e:  # noqa: BLE001
+        print(f"   リセットできませんでした（{e}）。本体の電源を手で入れ直してください")
+
+
+def run_flash(board: str, sim: bool, port: str) -> None:
+    env = board + ("_sim" if sim else "")
     print(f"== ビルドして書き込み ({env}) ==")
-    r = subprocess.run([sys.executable, "-m", "platformio", "run", "-e", env, "-t", "upload"],
-                       cwd=ROOT)
+    # pioarduino（lcd21）は Git Bash（MSYS）の環境変数があると idf_tools.py が失敗する（DOC-40 §2.3）
+    child_env = {k: v for k, v in os.environ.items() if not k.startswith(("MSYSTEM", "MINGW"))}
+    cmd = [sys.executable, "-m", "platformio", "run", "-e", env, "-t", "upload"]
+    if port:
+        cmd += ["--upload-port", port]
+    r = subprocess.run(cmd, cwd=ROOT, env=child_env)
     if r.returncode != 0:
         sys.exit("書き込みに失敗しました")
     time.sleep(2.0)
@@ -119,7 +139,10 @@ def main() -> None:
     ap.add_argument("--mode", default="drive",
                     choices=["drive", "idle", "sweep", "egt-danger", "dropout", "burst", "invalid"])
     ap.add_argument("--seconds", type=float, default=45.0, help="観測時間（既定 45 秒 = 実走模擬 2 周期強）")
-    ap.add_argument("--port", default=None, help="M5Dial のシリアルポート（既定は自動検出）")
+    ap.add_argument("--port", default=None, help="本体のシリアルポート（既定は自動検出）")
+    ap.add_argument("--board", default="lcd21", choices=["lcd21", "m5dial"],
+                    help="--flash で書き込む対象（既定 lcd21）")
+    ap.add_argument("--no-reset", action="store_true", help="--listen のとき本体をリセットしない")
     ap.add_argument("--channel", default="PCAN_USBBUS1")
     ap.add_argument("--flash", action="store_true", help="先にビルドして書き込む")
     ap.add_argument("--sim", action="store_true", help="--flash のとき CAN シミュレータ版を書き込む")
@@ -128,14 +151,19 @@ def main() -> None:
     args = ap.parse_args()
 
     if args.flash:
-        run_flash(args.sim)
+        run_flash(args.board, args.sim, args.port)
 
     # ---- IT-04: 本機が送信しないことの確認
     if args.listen:
         print(f"== IT-04: {args.seconds:.0f} 秒間バスを観測（本機の電源だけ入れた状態で実行すること） ==")
-        r = subprocess.run([sys.executable, os.path.join(HERE, "pcan_send.py"),
-                            "--channel", args.channel, "--listen", str(args.seconds)], cwd=ROOT)
-        sys.exit(r.returncode)
+        listener = subprocess.Popen([sys.executable, os.path.join(HERE, "pcan_send.py"),
+                                     "--channel", args.channel, "--listen", str(args.seconds)], cwd=ROOT)
+        # OPN-13 / RSK-13: CAN を USB の D+/D- に割り当てているので、起動直後（ROM ブートローダ・USB PHY が
+        # パッドを握っている間）にバスへ何か出ないかを見る。観測を始めてから本体をリセットする
+        if not args.no_reset:
+            time.sleep(2.0)
+            reset_board(find_port(args.port))
+        sys.exit(listener.wait())
 
     port = find_port(args.port)
     print(f"== ベンチ確認 mode={args.mode} port={port} {args.seconds:.0f}秒 ==")
@@ -201,7 +229,7 @@ def main() -> None:
             sender.kill()
 
     if not rows:
-        sys.exit("M5Dial から 1 行も受信できませんでした。配線・ポート・ファームウェアを確認してください。")
+        sys.exit("本体から 1 行も受信できませんでした。配線・ポート・ファームウェア（実 CAN 版か）を確認してください。")
 
     # ---- 採点（起動直後の 1 行目は計測窓が短いので除外する）
     body = rows[1:] if len(rows) > 1 else rows
