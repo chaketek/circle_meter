@@ -8,9 +8,12 @@ $ErrorActionPreference = 'Stop'
 Set-Location (Split-Path $PSScriptRoot -Parent)
 . "$PSScriptRoot/_pio.ps1"
 $envName = Get-MeterEnv -Board $Board -Sim:$Sim -Can1M:$Can1M
-if (-not $Port -and $Board -ne 'm5dial') {
-    $Port = Find-MeterPort
-    if (-not $Port) { throw '本体の COM ポートが見つかりません。UART と書かれた USB-C にデータ通信できるケーブルで繋いでください (docs/user/08_troubleshooting.md)' }
+if (-not $Port) {
+    $Port = Find-MeterPort -Board $Board
+    if (-not $Port) {
+        if ($Board -eq 'm5dial') { throw '本体（M5Dial）の COM ポートが見つかりません。M5Dial の USB-C にデータ通信できるケーブルで繋いでください (docs/user/08_troubleshooting.md)' }
+        throw '本体の COM ポートが見つかりません。UART と書かれた USB-C にデータ通信できるケーブルで繋いでください (docs/user/08_troubleshooting.md)'
+    }
     Write-Host "port: $Port"
 }
 $pioArgs = @('run', '-e', $envName, '-t', 'upload')

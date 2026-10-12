@@ -61,5 +61,6 @@ git diff <手順 2 の番号>..HEAD -- user/user_config.example.h
 
 ### 5. 書き込む
 
-`flash-meter` Skill に従って、いま使っている種類（デモ / 車両用）で書き込み、`meter_log.py` で確かめる。
+`flash-meter` Skill に従って、いま使っている機種（LCD-2.1 / M5Dial）と種類（デモ / 車両用）で書き込み、`meter_log.py` で確かめる。
+更新でロゴの置き場所などが変わった場合は、ビルドのログ（`logo:` で始まる行）の案内に従う（例: 古い `user/logo.cpp` が残っていたら `python tools/make_logo.py --user` で作り直す）。
 ビルドで止まった場合、作者の更新で設定の範囲が変わった可能性がある。メッセージを日本語でそのまま伝える。

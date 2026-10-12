@@ -1,6 +1,12 @@
 #include "page_splash.h"
 
+// SWD-14: 配布先ユーザーのロゴ（tools/select_logo.py が CM_USER_LOGO
+// を定義する）。名前を分けてパスの順に頼らない
+#ifdef CM_USER_LOGO
+#include "user_logo.h"
+#else
 #include "logo.h"
+#endif
 #include "theme.h"
 
 namespace cm::ui {

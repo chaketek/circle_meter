@@ -24,7 +24,7 @@
 // 主数値を AFR（空燃比、例 14.7）で出すなら 1、λ（例 1.00）で出すなら 0
 // #define USER_SHOW_AFR 1
 
-// 表示デザイン: USER_DIAL_NEEDLE_A（指針式）か USER_DIAL_RING（外周リング）
+// 表示デザイン: USER_DIAL_NEEDLE_A（指針式）か USER_DIAL_RING（外周リング）。M5Dial はリングのみ（この行は無視される）
 // #define USER_DIAL_STYLE USER_DIAL_NEEDLE_A
 
 // 画面の明るさ: 1（暗い）〜 5（明るい）
@@ -67,13 +67,13 @@
 // #define USER_COLOR_WARN       0xFFC400   // 警告
 // #define USER_COLOR_DANGER     0xFF2D2D   // 危険（NO SIGNAL などの赤い文字もこの色）
 
-// 文字・背景（主にリングのデザイン）
+// 文字・背景（主にリングのデザイン。M5Dial ではこれが画面全体の色）
 // #define USER_COLOR_TEXT       0xFFFFFF   // 主な文字
 // #define USER_COLOR_TEXT_SUB   0x8A8A8A   // 補助の文字
 // #define USER_COLOR_BG         0x000000   // 背景
 // #define USER_COLOR_TRACK      0x1A1A1A   // リングの未到達部分
 
-// 指針式デザインの盤面
+// 指針式デザインの盤面（LCD-2.1 だけ。M5Dial はリングのみなので使われない）
 // #define USER_COLOR_DIAL_BG     0x060606  // 盤面
 // #define USER_COLOR_NEEDLE      0xFF7014  // 針
 // #define USER_COLOR_DIAL_RIM    0x787878  // 外周の線

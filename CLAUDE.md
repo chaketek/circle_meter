@@ -1,10 +1,12 @@
 # circle_meter — Claude Code 向けプロジェクト指示
 
 rusEFI と CAN 接続する車載メータ（**Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B** / ESP32-S3R8 / 480×480 丸型 RGB 並列）のファームウェア。
+**M5Stack Dial v1.1 も配布対象**（2026-10-12〜。機能は一部: `SWR-68` / `docs/12_SYS3_system_arch.md` §8.5）。
 
 > **2026-10-01: 対象ハードを M5Stack Dial v1.1 から変更した。** 文書は改訂済み。**コードは移行中**:
 > LCD-2.1 向けの本番コード（`src/main_lcd21.cpp`、`lib/ui/`、`lib/hal/display_hal*`）を実装済みで、
-> M5Dial 向けの `src/main.cpp` は廃止予定のまま残してある（触らない）。
+> M5Dial 向けの `src/main.cpp` は 2026-10-12 に配布対象へ戻した。LCD-2.1 と同じドメイン層・受信タスク・ユーザー設定を使い、
+> 描画だけ M5GFX のリング（`SWD-15`）。M5Dial に機能を足すときは `SWR-68` の範囲を先に文書で広げること。
 > 移行の経緯と影響は `docs/12_SYS3_system_arch.md` §8 を読むこと。
 ASPICE をテーラリングした文書体系で管理している。**文書が仕様であり、コードは文書に従う。**
 
@@ -86,7 +88,8 @@ python -m platformio run -e lcd21_1m -t upload --upload-port COM10
 ```
 
 デモは UART0（115200）から 1 文字送って操作できる: `h` 停止/再開、`0`-`9` その位置で停止、`m` AFR/λ 切替、`v` 表示デザイン切替（指針式 A <-> リング）。
-1 秒ごとにシリアルへ fps・1 フレームの描画/flush 時間・画素数が出る。`m5dial` / `m5dial_sim` は M5Dial 用なので、LCD-2.1 には書き込まない。
+1 秒ごとにシリアルへ fps・1 フレームの描画/flush 時間・画素数が出る。両機種とも `i` で起動ログを出し直す（`SWR-68`）。
+`m5dial` / `m5dial_sim` は M5Dial 用なので、LCD-2.1 には書き込まない（逆も同じ）。M5Dial は `./tools/flash.ps1 -Board m5dial [-Sim]`、確認は `python tools/meter_log.py --board m5dial`（ネイティブ USB。VID 303A）。
 
 PowerShell からは `tools/test.ps1` / `tools/build.ps1` / `tools/flash.ps1` /
 `tools/monitor.ps1` / `tools/flash_and_monitor.ps1`。既定は `lcd21`（`-Sim` で `lcd21_sim`、`-Can1M` で `lcd21_1m`、
@@ -110,7 +113,9 @@ PowerShell からは `tools/test.ps1` / `tools/build.ps1` / `tools/flash.ps1` /
 | `lib/signal_model/` | 信号ストア・単位換算・設定・ボタン FSM・リング幾何・スイープ生成・表示ポリシー | HW 非依存 |
 | `lib/hal/` | TWAI・CAN 受信タスク・表示/タッチ（`display_hal`）・入力・NVS・診断 | ESP32 依存。`display_hal_lcd21.cpp` は `CM_BOARD_LCD21` のときだけ有効 |
 | `lib/ui/` | LVGL ポート・ページ（リング `PageLambda` / 指針式 A `PageNeedle`）・ウィジェット（`LambdaRing` / `BigNumber` / `DialFace` / `Needle`）・テーマ | LVGL 依存。**表示を変えるときは差分無効化を保つ**（`DEC-08`。全面再描画は 78 ms） |
-| `src/main.cpp` | 起動シーケンスとタスク生成 | |
+| `src/main.cpp` | M5Dial 版の起動シーケンスと描画（M5GFX のリング。`SWD-15`） | 共通部品（`CanRxTask` / `DisplayFilter` / `display_text.h` / `theme_colors.h`）を使う |
+| `src/main_lcd21.cpp` | LCD-2.1 版の起動シーケンスとタスク生成 | |
+| `include/theme_colors.h` | 配色（両機種共通。`USER_COLOR_*` で上書き） | LVGL / M5GFX に依存させない |
 | `test/` | native 単体テスト | |
 | `user/` | 配布先ユーザーの設定 `user_config.h` とロゴ（`SWR-67`） | git の管理対象外。雛形 `user_config.example.h` と `README.md` だけ管理 |
 | `include/user_overrides.h` | `user_config.h` の取り込みと範囲検査（`SWD-14`） | |
@@ -137,7 +142,7 @@ C++17 / `.clang-format`（Google ベース・インデント 4・列幅 110）/ 
 - `OPN-03` rusEFI 側で `Lambda1` / `EGT1` が構成済みか、`canSleepPeriodMs` の実設定値
 
 これらが未確定のまま「たぶんこうだろう」で実装を進めない。
-先に `src/main.cpp` のブリングアップ版を書き込み、シリアルログで確認する。
+先にブリングアップ用の版を書き込み、シリアルログで確認する。
 
 ## 未実装（フェーズ P4 以降）
 

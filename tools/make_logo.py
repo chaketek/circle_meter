@@ -3,7 +3,7 @@
 DOC-23 §7 / SWR-48。生成物は assets/logo.cpp / assets/logo.h。
 
 使い方:
-    python tools/make_logo.py --user               # 配布先ユーザー: user/logo.png -> user/logo.cpp / logo.h（SWR-67）
+    python tools/make_logo.py --user               # 配布先ユーザー: user/logo.png -> user/generated/<機種>/user_logo.*（SWR-67 / SWR-68）
     python tools/make_logo.py --user --invert      # 同上。白地に黒（+1 色）のロゴを黒地へ反転する
     python tools/make_logo.py                      # 既定（黒背景・輝度反転）
     python tools/make_logo.py --no-invert          # 元画像のまま（白背景）
@@ -75,55 +75,26 @@ def to_rgb565(r: int, g: int, b: int) -> int:
     return ((r & 0xF8) << 8) | ((g & 0xFC) << 3) | (b >> 3)
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--user", action="store_true",
-                    help="配布先ユーザー用: user/logo.png を LCD-2.1 の大きさで user/logo.cpp / logo.h へ。"
-                         "既定で反転せず黒地に置く（--invert で反転）")
-    ap.add_argument("--invert", action="store_true", help="--user のとき輝度反転する（白地に黒・1 色のロゴ向け）")
-    ap.add_argument("--src", default=None)
-    ap.add_argument("--out-c", default=None)
-    ap.add_argument("--out-h", default=None)
-    ap.add_argument("--max-width", type=int, default=None)
-    ap.add_argument("--max-height", type=int, default=None)
-    ap.add_argument("--no-invert", action="store_true", help="輝度反転をしない（白背景のまま）")
-    ap.add_argument("--bg", default=None, help="背景色 RRGGBB。既定は反転時 000000 / 非反転時 FFFFFF")
-    args = ap.parse_args()
+# 配布先ユーザーのロゴ（SWR-67 / SWR-68 / SWD-14）。機種ごとに枠とスプラッシュでの位置が違う
+USER_BOARDS = {
+    # 機種: (枠の幅, 枠の高さ, 画面の一辺, スプラッシュでの中央からの上ずれ px)
+    "lcd21": (408, 174, 480, 16),  # page_splash.cpp（下に版数を出すため 16 px 上）
+    "m5dial": (204, 140, 240, 8),  # src/main.cpp の showSplash
+}
 
-    if args.user:
-        # LCD-2.1 のスプラッシュの枠（DOC-23 §7）。背景は画面と同じ黒
-        user_dir = os.path.join(ROOT, "user")
-        args.src = args.src or os.path.join(user_dir, "logo.png")
-        args.out_c = args.out_c or os.path.join(user_dir, "logo.cpp")
-        args.out_h = args.out_h or os.path.join(user_dir, "logo.h")
-        args.max_width = args.max_width or 408
-        args.max_height = args.max_height or 174
-        args.no_invert = not args.invert
-        args.bg = args.bg or "000000"
-        if not os.path.isfile(args.src):
-            sys.exit(f"画像が見つかりません: {args.src}\nuser フォルダに logo.png という名前で置いてください")
-    else:
-        args.src = args.src or os.path.join(ROOT, "assets", "logo_src.png")
-        args.out_c = args.out_c or os.path.join(ROOT, "assets", "logo.cpp")
-        args.out_h = args.out_h or os.path.join(ROOT, "assets", "logo.h")
-        args.max_width = args.max_width or 204
-        args.max_height = args.max_height or 140
 
-    src = Image.open(args.src)
+def load_source(path: str, invert: bool, bg_hex: str) -> "Image.Image":
+    src = Image.open(path)
     if src.mode in ("RGBA", "LA") or (src.mode == "P" and "transparency" in src.info):
         # 透過 PNG は背景色の上に重ねる（透明部分を黒にする。--bg で変えられる）
-        bg_for_alpha = args.bg or ("FFFFFF" if args.no_invert else "000000")
-        under = Image.new("RGBA", src.size, "#" + bg_for_alpha)
+        under = Image.new("RGBA", src.size, "#" + bg_hex)
         src = Image.alpha_composite(under, src.convert("RGBA"))
     im = src.convert("RGB")
+    return unmix_invert(im) if invert else im
 
-    if not args.no_invert:
-        im = unmix_invert(im)
 
-    bg_hex = args.bg or ("FFFFFF" if args.no_invert else "000000")
-    bg = tuple(int(bg_hex[i : i + 2], 16) for i in (0, 2, 4))
-
-    # 余白を落とす: 背景色と異なるピクセルの外接矩形
+def fit(im: "Image.Image", bg, max_w: int, max_h: int) -> "Image.Image":
+    """余白を落とし、縦横比を保って枠に収め、偶数幅にそろえる。"""
     diff = Image.new("L", im.size, 0)
     dpx = diff.load()
     spx = im.load()
@@ -136,8 +107,7 @@ def main() -> None:
     if bbox:
         im = im.crop(bbox)
 
-    # 縦横比を保って収める
-    scale = min(args.max_width / im.width, args.max_height / im.height, 1.0)
+    scale = min(max_w / im.width, max_h / im.height, 1.0)
     w = max(1, int(round(im.width * scale)))
     h = max(1, int(round(im.height * scale)))
     im = im.resize((w, h), Image.LANCZOS)
@@ -147,20 +117,11 @@ def main() -> None:
         canvas = Image.new("RGB", (w + 1, h), bg)
         canvas.paste(im, (0, 0))
         im = canvas
-        w += 1
+    return im
 
-    if args.user:
-        # 変換結果を画像でも残す。Claude Code とユーザーが書き込む前に見て確かめるため（docs/user/06_logo.md）
-        preview = Image.new("RGB", (480, 480), bg)
-        # page_splash.cpp と同じ位置（中央から 16 px 上。下に版数を出すため）
-        preview.paste(im, ((480 - w) // 2, (480 - h) // 2 - 16))
-        # 丸い画面の外側を灰色にして、円の中に収まっているかを見やすくする
-        from PIL import ImageDraw
-        mask = Image.new("L", (480, 480), 255)
-        ImageDraw.Draw(mask).ellipse((0, 0, 479, 479), fill=0)
-        preview.paste((64, 64, 64), (0, 0, 480, 480), mask)
-        preview.save(os.path.join(os.path.dirname(args.out_c), "logo_preview.png"))
 
+def write_c(im: "Image.Image", bg, src_path: str, out_c: str, out_h: str) -> None:
+    w, h = im.size
     data = []
     spx = im.load()
     for y in range(h):
@@ -169,8 +130,9 @@ def main() -> None:
             data.append(to_rgb565(r, g, b))
 
     name = "cm_logo"
-    src_rel = os.path.relpath(args.src, ROOT).replace(os.sep, "/")
-    with open(args.out_h, "w", encoding="utf-8", newline="\n") as f:
+    src_rel = os.path.relpath(src_path, ROOT).replace(os.sep, "/")
+    header = os.path.basename(out_h)
+    with open(out_h, "w", encoding="utf-8", newline="\n") as f:
         f.write(
             "// tools/make_logo.py が生成。手で編集しないこと。\n"
             f"// 元画像: {src_rel}  (DOC-23 §7 / SWR-48)\n"
@@ -181,22 +143,76 @@ def main() -> None:
             f"constexpr uint16_t {name}_bg     = 0x{to_rgb565(*bg):04X};\n"
             f"extern const uint16_t {name}_data[{w * h}];\n"
         )
-
-    with open(args.out_c, "w", encoding="utf-8", newline="\n") as f:
+    with open(out_c, "w", encoding="utf-8", newline="\n") as f:
         f.write(
             "// tools/make_logo.py が生成。手で編集しないこと。\n"
             f"// 元画像: {src_rel}  (DOC-23 §7 / SWR-48)\n"
-            '#include "logo.h"\n\n'
+            f'#include "{header}"\n\n'
             f"const uint16_t {name}_data[{w * h}] = {{\n"
         )
         for i in range(0, len(data), 12):
             f.write("    " + " ".join(f"0x{v:04X}," for v in data[i : i + 12]) + "\n")
         f.write("};\n")
+    print(f"{w}x{h} -> {os.path.relpath(out_c, ROOT)} ({w * h * 2} bytes / {w * h * 2 / 1024:.1f} KB)")
 
-    print(f"{w}x{h} -> {args.out_c} ({w * h * 2} bytes / {w * h * 2 / 1024:.1f} KB)")
-    print(f"background = #{bg_hex}, invert = {not args.no_invert}")
+
+def write_preview(im: "Image.Image", bg, screen: int, lift: int, path: str) -> None:
+    """変換結果を丸い画面に置いた見え方。Claude Code とユーザーが書き込む前に見て確かめる（docs/user/06_logo.md）"""
+    from PIL import ImageDraw
+
+    w, h = im.size
+    preview = Image.new("RGB", (screen, screen), bg)
+    preview.paste(im, ((screen - w) // 2, (screen - h) // 2 - lift))
+    # 丸い画面の外側を灰色にして、円の中に収まっているかを見やすくする
+    mask = Image.new("L", (screen, screen), 255)
+    ImageDraw.Draw(mask).ellipse((0, 0, screen - 1, screen - 1), fill=0)
+    preview.paste((64, 64, 64), (0, 0, screen, screen), mask)
+    preview.save(path)
+    print(f"preview  -> {os.path.relpath(path, ROOT)}（{screen}x{screen} の画面に置いた見え方）")
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--user", action="store_true",
+                    help="配布先ユーザー用: user/logo.png を LCD-2.1 と M5Dial の両方の大きさで "
+                         "user/generated/<機種>/user_logo.cpp / .h へ。既定で反転せず黒地に置く（--invert で反転）")
+    ap.add_argument("--invert", action="store_true", help="--user のとき輝度反転する（白地に黒・1 色のロゴ向け）")
+    ap.add_argument("--src", default=None)
+    ap.add_argument("--out-c", default=None)
+    ap.add_argument("--out-h", default=None)
+    ap.add_argument("--max-width", type=int, default=None)
+    ap.add_argument("--max-height", type=int, default=None)
+    ap.add_argument("--no-invert", action="store_true", help="輝度反転をしない（白背景のまま）")
+    ap.add_argument("--bg", default=None, help="背景色 RRGGBB。既定は反転時 000000 / 非反転時 FFFFFF")
+    args = ap.parse_args()
+
     if args.user:
-        print("preview  -> user/logo_preview.png（480x480 の画面に置いた見え方）")
+        user_dir = os.path.join(ROOT, "user")
+        src_path = args.src or os.path.join(user_dir, "logo.png")
+        if not os.path.isfile(src_path):
+            sys.exit(f"画像が見つかりません: {src_path}\nuser フォルダに logo.png という名前で置いてください")
+        invert = args.invert
+        bg_hex = args.bg or "000000"  # 画面の背景と同じ黒
+        bg = tuple(int(bg_hex[i : i + 2], 16) for i in (0, 2, 4))
+        base = load_source(src_path, invert, bg_hex)
+        for board, (max_w, max_h, screen, lift) in USER_BOARDS.items():
+            out_dir = os.path.join(user_dir, "generated", board)
+            os.makedirs(out_dir, exist_ok=True)
+            im = fit(base, bg, max_w, max_h)
+            write_c(im, bg, src_path, os.path.join(out_dir, "user_logo.cpp"), os.path.join(out_dir, "user_logo.h"))
+            write_preview(im, bg, screen, lift, os.path.join(user_dir, f"logo_preview_{board}.png"))
+        print(f"background = #{bg_hex}, invert = {invert}")
+        return
+
+    src_path = args.src or os.path.join(ROOT, "assets", "logo_src.png")
+    out_c = args.out_c or os.path.join(ROOT, "assets", "logo.cpp")
+    out_h = args.out_h or os.path.join(ROOT, "assets", "logo.h")
+    invert = not args.no_invert
+    bg_hex = args.bg or ("000000" if invert else "FFFFFF")
+    bg = tuple(int(bg_hex[i : i + 2], 16) for i in (0, 2, 4))
+    im = fit(load_source(src_path, invert, bg_hex), bg, args.max_width or 204, args.max_height or 140)
+    write_c(im, bg, src_path, out_c, out_h)
+    print(f"background = #{bg_hex}, invert = {invert}")
 
 
 if __name__ == "__main__":

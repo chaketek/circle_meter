@@ -8,6 +8,7 @@
 
 #include "config.h"
 #include "display_filter.h"
+#include "display_text.h"  // formatSensorStatus（両機種で共有。SWR-68）
 
 namespace cm::ui {
 
@@ -22,10 +23,6 @@ void formatEgt(char* buf, size_t size, const DisplayValues& v);
 
 /// EGT の色。警告は黄、危険は赤の 2 Hz 点滅（SWR-46）、Stale / Lost は灰。
 uint32_t egtColorHex(const DisplayValues& v, bool blinkOn);
-
-/// SWR-51 / DOC-23 §6.1: λ が無効なときに出す文字列。Ok なら空文字列。
-/// buf は 32 バイト以上（最長 "SENSOR FAULT: UNDERHEAT" = 23 文字）。
-void formatSensorStatus(char* buf, size_t size, const LambdaSensorInfo& info);
 
 /// formatSensorStatus の文字列の色。
 uint32_t sensorStatusColorHex(const LambdaSensorInfo& info);
