@@ -57,14 +57,14 @@
 | C++ コンパイラ | native 単体テスト用。Windows は `scoop install gcc`（確認済: MinGW GCC 15.2） | `g++ --version` |
 | `python-can` | PCAN からの CAN 送出（`DOC-30 §3`） | `python -c "import can"` |
 | Pillow | ロゴ変換 `tools/make_logo.py` | `python -c "import PIL"` |
-| clang-format | CI の lint ゲートをローカルで再現する | `python -m pip install --user clang-format` |
+| clang-format | CI の lint ゲートをローカルで再現する。**23.1.1 に固定**（CI と同じ版。版が違うと整形結果が変わる） | `python -m pip install --user clang-format==23.1.1` |
 | PEAK PCAN ドライバ | PCAN-USB を使う結合テスト | PCAN-View が起動すること |
 | エディタ | VS Code + PlatformIO IDE 拡張（任意） | — |
 
 ### 2.2 初回セットアップ
 
 ```bash
-python -m pip install --user --upgrade platformio python-can pillow clang-format
+python -m pip install --user --upgrade platformio python-can pillow numpy pyserial clang-format==23.1.1
 ```
 
 インストール後、`pio` が PATH に無い場合は `python -m platformio` で代用できる。
@@ -224,7 +224,7 @@ flowchart LR
 
 | ジョブ | 実行環境 | 内容 | 失敗時 |
 |---|---|---|---|
-| `lint` | ubuntu-latest | `clang-format --dry-run -Werror` | マージ不可 |
+| `lint` | ubuntu-latest | `clang-format --dry-run -Werror`（pip の 23.1.1。§2.1） | マージ不可 |
 | `guard` | ubuntu-latest | `bash tools/guard.sh`（`twai_transmit` の混入 `RSK-06`、`TWAI_MODE_NO_ACK` `RSK-10`、ドメイン層の HW 依存 `DEC-06`、スケーリング定数の直書き `SWD-01`） | マージ不可 |
 | `test` | ubuntu-latest | `pio test -e native` | マージ不可 |
 | `build` | ubuntu-latest | `pio run -e m5dial -e m5dial_sim` + Flash/RAM 使用量をジョブサマリに出力 | マージ不可 |

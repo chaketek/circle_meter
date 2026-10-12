@@ -20,9 +20,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # 版を固定する。版が違うと整形結果が変わり、手元で整形したファイルが違反になる
+      # （apt の 18 と手元の 23 で全体が落ちた。2026-10-12）。上げるときは DOC-40 §2.1 と同時に
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
       - name: clang-format
         run: |
-          sudo apt-get update -qq && sudo apt-get install -y clang-format
+          python -m pip install -q clang-format==23.1.1
+          clang-format --version
           files=$(find src lib test -type f \( -name '*.cpp' -o -name '*.h' \))
           echo "$files"
           clang-format --dry-run -Werror $files
