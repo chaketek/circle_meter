@@ -152,7 +152,8 @@ def main() -> None:
     if args.user:
         # 変換結果を画像でも残す。Claude Code とユーザーが書き込む前に見て確かめるため（docs/user/06_logo.md）
         preview = Image.new("RGB", (480, 480), bg)
-        preview.paste(im, ((480 - w) // 2, (480 - h) // 2))
+        # page_splash.cpp と同じ位置（中央から 16 px 上。下に版数を出すため）
+        preview.paste(im, ((480 - w) // 2, (480 - h) // 2 - 16))
         # 丸い画面の外側を灰色にして、円の中に収まっているかを見やすくする
         from PIL import ImageDraw
         mask = Image.new("L", (480, 480), 255)
