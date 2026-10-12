@@ -55,6 +55,9 @@ PowerShell からは `tools/test.ps1` / `tools/build.ps1` / `tools/flash.ps1` /
 `tools/monitor.ps1` / `tools/flash_and_monitor.ps1`。
 `pio` が PATH に無い場合は `python -m platformio` を使う。
 
+`lcd21_bringup`（LCD-2.1 の計測用スケッチ）は pioarduino を使うので **PowerShell から** `pio run -e lcd21_bringup` を実行する
+（Git Bash では `idf_tools.py` が失敗する）。詳細は `docs/40_SUP8` §2.3。
+
 **書き込みは実機が USB 接続されているときだけ実行する。** CI では行わない。
 
 ## コードの置き場所

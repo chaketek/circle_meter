@@ -33,7 +33,8 @@
       "Bash(bash tools/guard.sh:*)",
       "Bash(python tools/bench_check.py:*)",
       "Bash(tools/bench_check.ps1:*)",
-      "PowerShell(./tools/bench_check.ps1:*)"
+      "PowerShell(./tools/bench_check.ps1:*)",
+      "Bash(python tools/lcd_capture.py:*)"
     ],
     "deny": []
   }
