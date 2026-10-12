@@ -87,6 +87,8 @@ def judge(lines):
     user = find("user config:")
     if user:
         print(f"OK  ユーザー設定: {'あり' if 'present' in user else 'なし（既定の表示）'}")
+        if "present" in user:
+            print("      （色の設定はここには出ません。画面で確かめてください）")
         idx = lines.index(user)
         for ln in lines[idx + 1: idx + 3]:
             if "applied:" in ln:
