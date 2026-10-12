@@ -99,6 +99,39 @@ jobs:
             .pio/build/m5dial_sim/firmware.bin
           if-no-files-found: error
 
+  # ---------------------------------------------------------------- ビルド (LCD-2.1)
+  # pioarduino（第三者製プラットフォーム。OPN-15）+ ESP32_Display_Panel + LVGL を含む。
+  # ローカルでは PowerShell から実行しないと失敗する（Git Bash の MSYS）が、Linux ランナーでは問題ない想定。
+  build-lcd21:
+    name: build (LCD-2.1 / pioarduino)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+            ~/.cache/pip
+          key: pio-lcd21-${{ hashFiles('platformio.ini', 'boards/**') }}
+      - run: pip install --upgrade platformio
+      - name: Build
+        run: pio run -e lcd21 -e lcd21_sim
+      - name: サイズレポート
+        run: |
+          {
+            echo '## Firmware size (LCD-2.1)'
+            echo '```'
+            pio run -e lcd21 -t size 2>&1 | grep -E 'RAM:|Flash:' || true
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   # ---------------------------------------------------------------- SPL.2
   release:
     name: release

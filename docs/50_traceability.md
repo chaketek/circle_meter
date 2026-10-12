@@ -13,11 +13,11 @@
 
 | STK | SYS | SWR | SWA / SWD | 検証 |
 |---|---|---|---|---|
-| `STK-01` 周辺視野で判別 | `SYS-10`,`SYS-12`,`SYS-13` | `SWR-42`,`SWR-43`,`SWR-44` | `SWA-22`/`SWD-08` LambdaRing | `QT-03`,`QT-08` |
+| `STK-01` 周辺視野で判別 | `SYS-10`,`SYS-12`,`SYS-13` | `SWR-42`,`SWR-43`,`SWR-44` | `SWA-22`/`SWD-08` LambdaRing, `SWD-10` BigNumber | `UT-17`,`QT-03`,`QT-08` |
 | `STK-02` 外周バー + 色変化 | `SYS-10`,`SYS-11`,`SYS-17` | `SWR-27`,`SWR-42` | `SWA-05` Units, `SWD-08` | `UT-05`,`QT-02` |
 | `STK-03` 排気温度監視・警告 | `SYS-04`,`SYS-15`,`SYS-16` | `SWR-08`,`SWR-28`,`SWR-46` | `SWA-03`,`SWA-05`,`SWA-22` | `UT-03`,`UT-07`,`QT-05` |
 | `STK-04` AFR / λ 切替 | `SYS-14`,`SYS-31` | `SWR-25`,`SWR-45` | `SWA-05`,`SWA-21` | `UT-06`,`IT-06` |
-| `STK-05` 滑らかな更新 | `SYS-12`,`SYS-13` | `SWR-24`,`SWR-43` | `SWA-05` Lpf1, `SWA-20` | `UT-11`,`QT-03`,`QT-04` |
+| `STK-05` 滑らかな更新 | `SYS-12`,`SYS-13` | `SWR-24`,`SWR-43` | `SWA-05` Lpf1, `SWA-20`/`SWD-11` LvglPort | `UT-11`,`QT-03`,`QT-04` |
 | `STK-06` 他情報のページ切替 | `SYS-05`,`SYS-30` | `SWR-09`,`SWR-61`,`SWR-62` | `SWA-11` PageManager, `SWD-07` | `UT-04`,`IT-06` |
 | `STK-07` タッチ操作（走行中の操作は想定しない） | `SYS-30`-`SYS-32`,`SYS-34`,`SYS-36` | `SWR-62`-`SWR-64`,`SWR-66` | `SWA-07`/`SWD-06` InputDriver | `UT-12`,`IT-06`,`QT-07` |
 | `STK-08` オープニング画面 | `SYS-18`,`SYS-19` | `SWR-48` | `SWA-21` SplashPage, `SWD-09` | `QT-06` |
@@ -70,6 +70,9 @@
 | `UT-14` | `SWD-02 §2.3` | 同上 |
 | `UT-15` | `SWR-26`,`RSK-01`,`DOC-21 §5.1` | 同上 |
 | `UT-16` | `SWR-21`,`RSK-01`,`SWD-02 §2.3` | 同上 |
+| `UT-17` | `SWD-08`,`DEC-05`,`DEC-08`,`SYS-12` | 同上 |
+| `UT-18` | `SWR-100` | 同上 |
+| `UT-19` | `SYS-20`,`SWR-46`,`SWR-47` | 同上 |
 | `IT-01`-`IT-15` | `DOC-30 §3` 参照 | 実機手順 |
 | `QT-01`-`QT-11` | `DOC-30 §4` 参照 | 実機・実車手順 |
 
@@ -84,7 +87,7 @@
 | `RSK-03`（高温） | **対策未決定** | `OPN-04` / `OPN-09`。v1.0 リリース前に判断（対策する / 制約として受容する） |
 | `RSK-07`（走行中の誤タッチ） | **受容** | 2026-09-28 判断。対策要求を持たないため検証項目も無い（`DOC-12 §8.3`） |
 | `SYS-36`（タッチのみで全機能到達） | — | `QT-07` で担保（`SYS-33` を反転したもの） |
-| `OPN-12` / `OPN-13` / `OPN-14` / `OPN-15` | **未解決（`OPN-12` / `OPN-15` は一部実測済み）** | 480×480 RGB の実描画性能（素の描画: 全面 16 fps / 帯 65 fps。LVGL は未）、CAN の GPIO19/20 割当の実機検証、`VBus` 給電、プラットフォーム選定（pioarduino は動作確認済み、TWAI は未）。記録: `test_records/2026-10-02_lcd21_bringup.md` |
+| `OPN-12` / `OPN-13` / `OPN-14` / `OPN-15` | **未解決（`OPN-12` は λ ページで達成、`OPN-15` は暫定決定）** | 480×480 RGB の実描画性能（λ ページは LVGL で平均 39 fps。CAN 受信中・NVS・他ページは未）、CAN の GPIO19/20 割当の実機検証、`VBus` 給電、プラットフォーム選定（pioarduino + `ESP32_Display_Panel` + LVGL 9.2.2 で動作。TWAI の実機動作とサプライチェーン確認が残る）。記録: `test_records/2026-10-02_lcd21_bringup.md`, `test_records/2026-10-02_lcd21_lvgl.md` |
 
 ## 5. 更新ルール
 

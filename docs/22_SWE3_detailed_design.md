@@ -276,33 +276,70 @@ public:
 
 ## 8. `SWD-08` LambdaRing ウィジェット（`lib/ui/`）
 
-LVGL ウィジェットではなく、`lv_canvas` に直接描く描画関数として実装する（`DEC-02`）。
+LVGL 標準のウィジェットではなく、`lv_obj` 1 つに `LV_EVENT_DRAW_MAIN` の描画関数を付けて自前で描く（`DEC-02`）。
+画面全体（480x480）を覆う透明なオブジェクトで、背景・枠は持たない。
 
 ```cpp
-struct RingStyle {
-    int16_t  cx, cy;
-    int16_t  rOuter, rInner;
-    int16_t  startAngleDeg, sweepDeg;
-    lv_color_t trackColor;
+class LambdaRing {
+public:
+    void create(lv_obj_t* parent, const Config& cfg);
+    void configure(const Config& cfg);                       // 設定変更時: 目盛位置の再計算
+    void set(float ratio, uint32_t fillHex, bool valid);     // 毎フレーム
+    void setAlarm(bool on);                                  // EGT DANGER の外周警告帯（SWR-46）
 };
-
-void ringDraw(lv_canvas_t* canvas, const RingStyle& st,
-              float ratio,           // 0.0 - 1.0
-              lv_color_t fillColor,
-              bool showMarker);
 ```
 
-**性能上の設計**:
-- 毎フレーム全リングを再描画すると 22 x 円周 ≒ 15,000 px の書き換えになる。
-  **前フレームの `ratio` を保持し、差分の角度範囲のみ塗り替える**。
-  値が増えた場合は追加分を塗り、減った場合は減少分を `trackColor` で消す。
-- ゾーン色が変わったフレームのみ全再描画する。
-- これにより定常時の描画量は 1 フレームあたり数百 px に収まる。
-- `lv_obj_invalidate_area()` で無効領域も差分のみに限定する。
+**描くもの**（Z 順）: 軌道（`#1A1A1A`・270°）→ 塗り（ゾーン色の単色・開始角から現在値まで）→
+目盛 6 本（半径 184-190）→ ゾーン境界 4 本（半径 180-190・白）→ 先端マーカー（白・幅 3 px）→ 警告帯（半径 236-241・赤）。
+信号が `Lost` のときは塗りと先端マーカーを出さない（`valid = false`。`RSK-01`）。
+
+**性能上の設計**（`DEC-08`。480x480 の全面再描画は 78 ms で `SYS-12` を満たせない）:
+
+| 変化 | 無効化する範囲 |
+|---|---|
+| 値だけが動いた | **前回の角度から今回の角度までの環状部**（前後 1.5° の余白）の外接矩形 1 つ。0.2° 未満の変化は無視する |
+| ゾーン色・有効性が変わった | 開始角から先端までの環状部を **15° ごとの矩形に分割**して無効化する（全体の外接矩形 = 全画面にしない） |
+| 警告帯の点滅 | 半径 236-241 の帯を全周 24 個の矩形に分割 |
+
+分割数は LVGL の無効領域バッファ（`LV_INV_BUF_SIZE` = 32）を超えない 24 個以内にする。超えると LVGL が
+1 つの大きな矩形に併合してしまい、分割の意味がなくなる。外接矩形の計算は `lib/signal_model/ring_geometry.h`
+（HW・LVGL 非依存、`UT-17`）。
 
 **契約**: `ratio` は呼び出し側で `0.0 - 1.0` にクランプ済みであること（`ringRatio()` を使う）。
-`ringDraw()` 内で範囲外入力を受けた場合はクランプして描画し、アサートしない
+`set()` 内で範囲外入力を受けた場合はクランプして描画し、アサートしない
 （走行中に落ちるより、誤った範囲で描くほうがまだ安全）。
+
+### 8.1 `SWD-10` BigNumber ウィジェット（`lib/ui/`）
+
+主数値（AFR / λ）と EGT の大きな数字を描く。`lv_label` は使わない（`DEC-08`）。
+
+```cpp
+class BigNumber {
+public:
+    void create(lv_obj_t* parent, const lv_font_t* font, int width, int centerY);
+    void setFont(const lv_font_t* font, int width);          // AFR <-> λ の切替
+    void setText(const char* utf8, uint32_t colorHex);       // 毎フレーム
+};
+```
+
+- 文字列は UTF-8。**1 セル = 1 コードポイント**（EGT の `°` は 2 バイト）。最大 8 セル。
+- **数字は等幅のセル**（その書体で最も広い数字の幅）に置き、セルの中で中央揃えにする。
+  比例幅だと 1 桁変わるたびに文字列全体の幅が変わり、桁単位の更新ができない。
+- `setText()` は前回と比べ、**文字・位置・幅のいずれかが変わったセルだけ**を旧位置と新位置の両方で無効化する
+  （旧位置を消さないと桁が動いたとき残像が残る）。色が変わったときだけ全セル。
+- 描画は 1 セルにつき `lv_draw_label`（1 文字・中央揃え）。描画は後で実行されるので、文字列はセルが保持する。
+- 書体は `tools/make_font.py` が Montserrat Bold から生成する（`DOC-23 §9`）。数字専用で行の高さが字の高さに一致するため、垂直中心にそのまま置ける。
+
+### 8.2 `SWD-11` LvglPort / DisplayHal（`lib/ui/` / `lib/hal/`）
+
+| 項目 | 内容 |
+|---|---|
+| 描画バッファ | 内蔵 SRAM の静的配列 480x60x2 = 57.6 KB を **1 面**（flush が同期のため 2 面は無意味）。部分描画モード |
+| flush | `DisplayHal::drawBitmap()` = PSRAM のフレームバッファへの memcpy。完了まで戻る |
+| tick | `lv_tick_set_cb(millis)`。LVGL の API を呼ぶのは UI タスク（Core 1）のみ（`LV_USE_OS = NONE`） |
+| 計測 | flush 回数・画素数・時間、`lv_timer_handler` の時間を累積し、1 秒ごとに fps・1 フレームの描画/flush 時間・画素数を出す（`QT-03`） |
+| 起動 | `Board::begin()` の前に `backlight.pre_process.idle_off = 1` を立て、点灯は最初の描画後（`DOC-23 §7`） |
+| 更新周期 | UI は **40 Hz**（25 ms）で更新する。30 Hz のときは平均 29.4 fps だった（当時はゾーン境界でリング全体 = 全画面を無効化しており、その 1 フレームが 78 ms で 33 ms の予算を超えたため）。リングの無効化を分割（`DEC-08`）したうえで 40 Hz に上げ、平均 39 fps / 最小 35 fps になった。ゾーン境界や警告帯の点滅で 1 フレームが重くなっても 30 fps を割らない余裕を持たせる意図。LPF（`SWR-24`）は dt を受け取るので周期は自由 |
 
 ## 9. アプリケーション起動シーケンス（`SWD-09`）
 
@@ -341,5 +378,6 @@ LVGL 初期化より前に `CanDriver::begin()` とタスク生成を行う。
 | `CM_TWAI_TX_GPIO` | `2` | CAN TX の GPIO（`OPN-02` で確定） |
 | `CM_TWAI_RX_GPIO` | `1` | CAN RX の GPIO |
 | `CM_ENABLE_CAN_SIM` | 未定義 | 定義すると CAN シミュレータを有効化（`SWR-100`） |
+| `CM_BOARD_LCD21` | 未定義 | Waveshare ESP32-S3-Touch-LCD-2.1 向け。`lib/hal/display_hal_lcd21.cpp` が有効になる |
 | `CM_FW_VERSION` | git describe | ビルド時に埋め込み（`SWR-102`） |
 | `CM_LOG_LEVEL` | `3` (INFO) | シリアルログレベル |

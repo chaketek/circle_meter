@@ -22,6 +22,9 @@
 | CI 定義 | GitHub Actions ワークフロー | `.github/workflows/` | git |
 | ツール | 書き込み・ログ・変換スクリプト | `tools/` | git |
 | 資産 | ロゴ・フォント | `assets/` | git（生成元 PNG と生成物 C の両方） |
+| ボード定義 | PlatformIO ボード定義・パネル設定 | `boards/`（`waveshare_lcd21.json`, `lcd21_conf/`） | git |
+| LVGL 設定 | `lv_conf.h`（必要な項目だけ。残りは LVGL の既定値） | `include/` | git |
+| ブリングアップ | 計測専用の使い捨てスケッチ（本番ではない） | `bringup/` | git |
 | 外部依存 | PlatformIO platform / ライブラリ | `platformio.ini` に**バージョン固定**して記録 | git（`pio pkg` のロック相当） |
 | 成果物 | `firmware.bin`, `firmware.elf` | GitHub Release / Actions artifact | タグに紐付け |
 
@@ -34,6 +37,8 @@
 | `platform` (espressif32) | 完全固定（例 `6.9.0`） | Arduino core / ESP-IDF のバージョンが変わると TWAI API・メモリ配置が変わる |
 | `lvgl` | 完全固定（例 `9.2.2`） | v9 系で描画性能の差がある（`DOC-21 §2.4`）。FPS 実測結果とバージョンを対応付ける |
 | `M5Dial` / `M5Unified` / `M5GFX` | 完全固定 | パネル初期化パラメータが変わると表示が崩れる |
+| `platform`（LCD-2.1 版） | **pioarduino 55.03.312-1**（URL とバージョンを固定）。第三者製 | 公式の espressif32 7.1.3 は Arduino コアが 2.0.17 系で RGB パネルの bounce buffer が使えない（`OPN-15`） |
+| `ESP32_Display_Panel` / `ESP32_IO_Expander` / `esp-lib-utils` | タグ固定（v1.0.4 / v1.1.0 / v0.2.0） | ピン・ST7701 初期化列・タイミングの定義を含む |
 
 依存を更新する際は**必ず `QT-03`（FPS 実測）を再実行**し、結果を PR に記載する。
 
@@ -77,7 +82,7 @@ pio test -e native         # ドメイン層の単体テスト（PC 上で実行
 | 項目 | 値 |
 |---|---|
 | ボード | **Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B**（ESP32-S3R8） |
-| PlatformIO board | `boards/waveshare_lcd21.json`（自作）。**プラットフォームは pioarduino 55.03.312-1（Arduino-ESP32 3.3.12 / IDF 5.5.5）で動作確認済み**（`env:lcd21_bringup`、`OPN-15` は TWAI 確認とサプライチェーン確認が残り）。**Git Bash では `idf_tools.py` が失敗するので PowerShell から実行する**。初回に `~/.platformio/penv` が再作成される |
+| PlatformIO board | `boards/waveshare_lcd21.json`（自作）。**環境は 3 つ**: `lcd21`（実 CAN。GPIO20 TX / GPIO19 RX）、`lcd21_sim`（CAN の代わりに λ / EGT をスイープ）、`lcd21_bringup`（計測専用）。**プラットフォームは pioarduino 55.03.312-1**（`OPN-15`: TWAI の実機動作とサプライチェーン確認が残り）。**Git Bash では `idf_tools.py` が `MSys/Mingw is not supported` で失敗するので PowerShell から実行する**。初回に `~/.platformio/penv` が Python 3.13 の venv に作り直される（システムの `python -m platformio` と `m5dial` 環境は影響を受けない）。最適化は **-O2**（Arduino-ESP32 既定の -Os を外す。描画が CPU 律速のため） |
 | framework | `arduino` |
 | Flash | **16 MB**, QIO, 80 MHz |
 | PSRAM | **8 MB Octal**（実機の esptool 応答で確認済み）。`memory_type = qio_opi`（Flash は Quad、PSRAM は Octal） |
@@ -115,12 +120,18 @@ ffmpeg -f dshow -video_size 1280x720 -i video="5MP USB Camera" -frames:v 1 -upda
 
 > PC 内蔵カメラ（`Integrated Camera`）は使わない。LCD の確認には外付けのカメラのみを使う。
 
+`tools/lcd_capture.py` がこの撮影を包んでいる（PC 内蔵カメラは名前で拒否する。`--burst N` で連写）。
+カメラの設置状態により **画面は 180° 回転して写る**。色はカメラの癖で白が水色に寄る（白 = R 162 / G 245 / B 250 程度）ので、
+色は絶対値ではなく相対差で判断する。**動いている数字は露光中に重なって写り、残像のように見える**ので、
+見た目の確認は停止状態（下の操作キー）で撮る。fps・描画量は撮影ではなくシリアルの計測値で見る。
+
 ### 2.5 車両に接続せずに開発する方法（`SYS-61` / `SWR-100`）
 
 | 手段 | 用途 | 使い方 |
 |---|---|---|
 | **native 単体テスト** | デコード・鮮度管理・単位換算のロジック検証 | `pio test -e native` |
 | **CAN シミュレータ（内蔵）** | 実機で UI の見た目と FPS を確認 | `pio run -e m5dial_sim -t upload`（λ・EGT をスイープ） |
+| **画面スイープデモ（LCD-2.1）** | 物理層なしで λ ゾーン・EGT 警告・fps を確認 | PowerShell で `pio run -e lcd21_sim -t upload`。λ が 0.68 <-> 1.36 を 8.5 秒で往復し、EGT は 5 °C 刻みで 300 <-> 960 °C。UART0 から 1 文字送って操作: `h` 停止/再開、`0`-`9` その位置で停止、`m` AFR/λ 切替。1 秒ごとにシリアルへ fps・描画時間・画素数を出す |
 | **PCAN からの送出** | ベンチで実バスを模擬（`IT-*` / `QT-*`） | `python tools/pcan_send.py --mode sweep`（要 PEAK ドライバ + `python-can`）。詳細は `DOC-30 §3` |
 
 `tools/replay/` の CSV 形式:
@@ -197,6 +208,7 @@ flowchart LR
 | `guard` | ubuntu-latest | `bash tools/guard.sh`（`twai_transmit` の混入 `RSK-06`、`TWAI_MODE_NO_ACK` `RSK-10`、ドメイン層の HW 依存 `DEC-06`、スケーリング定数の直書き `SWD-01`） | マージ不可 |
 | `test` | ubuntu-latest | `pio test -e native` | マージ不可 |
 | `build` | ubuntu-latest | `pio run -e m5dial -e m5dial_sim` + Flash/RAM 使用量をジョブサマリに出力 | マージ不可 |
+| `build-lcd21` | ubuntu-latest | `pio run -e lcd21 -e lcd21_sim`（pioarduino。LVGL / ESP32_Display_Panel を含む） | マージ不可（初回の実績を見て判断） |
 | `release` | ubuntu-latest | タグ push 時のみ。`firmware.bin` `firmware.elf` を Release に添付 | — |
 
 ### 4.3 実機への書き込みが CI に含まれない理由
@@ -264,9 +276,9 @@ GitHub Issues で一元管理する。文書は作らず、ラベルで区別す
 | **P0. 文書化** | `DOC-00` – `DOC-50` 作成 | 本文書一式のレビュー完了 | ✅ 完了 (2026-09-21) |
 | **P1. 骨格** | リポジトリ構成、`platformio.ini`、CI、ドメイン層、単体テスト、ブリングアップ FW | `pio test -e native` (45 件) と `pio run -e m5dial` が green、実機で起動確認 | ✅ 完了 (2026-09-21) |
 | **P2. ブリングアップ（M5Dial）** | `OPN-01` – `OPN-03` の実測解決。CAN 受信が動くこと | ベンチで `0x207` / `0x209` を受信し、シリアルに値が出る | ✅ 完了 (2026-09-21)。`IT-01/02/03/04/15` 合格 |
-| **P2.5 ボード移行** | 対象ハードを Waveshare ESP32-S3-Touch-LCD-2.1 へ変更（`DOC-12 §8`） | ① 文書改訂 ② `OPN-15`（プラットフォーム・表示ライブラリ）決定 ③ `OPN-12`（480×480 RGB の実描画性能）実測 ④ `OPN-13`（CAN を GPIO19/20 に割り当てて PCAN と通信）確認 ⑤ `OPN-14`（`VBus` 給電・消費電流）確認 | ⏳ 実施中（① 完了、② 一部（pioarduino で動作確認）、③ 一部（素の描画で実測。LVGL は未）、④⑤ 未着手） |
+| **P2.5 ボード移行** | 対象ハードを Waveshare ESP32-S3-Touch-LCD-2.1 へ変更（`DOC-12 §8`） | ① 文書改訂 ② `OPN-15`（プラットフォーム・表示ライブラリ）決定 ③ `OPN-12`（480×480 RGB の実描画性能）実測 ④ `OPN-13`（CAN を GPIO19/20 に割り当てて PCAN と通信）確認 ⑤ `OPN-14`（`VBus` 給電・消費電流）確認 | ⏳ 実施中（① 完了、② 暫定決定（pioarduino + ESP32_Display_Panel + LVGL 9.2.2。TWAI とサプライチェーン確認が残る）、③ λ ページは達成（LVGL で平均 39 fps）、④⑤ 未着手） |
 | **P3. ドメイン実装** | デコーダ・信号ストア・単位換算の完成 + `UT-*` 全件 | `UT-01` – `UT-13` 全て pass | 未着手 |
-| **P4. HMI 実装** | λ リング・数値・EGT・ページ管理・スプラッシュ | `QT-02` / `QT-03` 合格 | 未着手 |
+| **P4. HMI 実装** | λ リング・数値・EGT・ページ管理・スプラッシュ | `QT-02` / `QT-03` 合格 | ⏳ 着手（2026-10-02）。**λ ページ・スプラッシュ・輝度・EGT 警告・シミュレータデモが LCD-2.1 実機で動作**。未実装: 他ページ、`PageManager`、タッチ入力（`SWD-06`）、設定メニュー、診断ページ |
 | **P5. 設定・診断** | 設定メニュー・NVS・診断ページ | `IT-05` / `IT-13` 合格 | 未着手 |
 | **P6. 車両検証** | 実車搭載、`QT-*` 全件、1 時間連続走行 | `DOC-10 §6` 受入基準を全て満たす | 未着手 |
 | **P7. v1.0 リリース** | タグ付け、Release 作成 | — | 未着手 |
