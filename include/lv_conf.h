@@ -33,9 +33,9 @@
 #define LV_DRAW_BUF_ALIGN         4
 
 // ---- ログ（UART0 へ。出力先は main で登録する）
-#define LV_USE_LOG         1
-#define LV_LOG_LEVEL       LV_LOG_LEVEL_WARN
-#define LV_LOG_PRINTF      0
+#define LV_USE_LOG           1
+#define LV_LOG_LEVEL         LV_LOG_LEVEL_WARN
+#define LV_LOG_PRINTF        0
 #define LV_LOG_USE_TIMESTAMP 0
 
 // ---- フォント（内蔵は小さい字だけ。大きい数字は生成フォント）
@@ -45,9 +45,9 @@
 #define LV_FONT_DEFAULT       &lv_font_montserrat_24
 
 // ---- 使わない機能
-#define LV_USE_PERF_MONITOR 0
-#define LV_USE_SYSMON       0
-#define LV_USE_DEMO_WIDGETS 0
+#define LV_USE_PERF_MONITOR  0
+#define LV_USE_SYSMON        0
+#define LV_USE_DEMO_WIDGETS  0
 #define LV_USE_THEME_DEFAULT 0  // 配色は theme.h で明示する。テーマのスタイル解決コストとメモリを払わない
 
 #endif /* LV_CONF_H */
