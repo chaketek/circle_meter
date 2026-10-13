@@ -244,7 +244,7 @@ CAN は受信しているが λ が無効のとき、`NO SIGNAL` の代わりに
 | 項目 | 仕様 |
 |---|---|
 | 構成 | 中央にロゴ、下部に `circle_meter` と FW 版数（`v0.1.0-3-gabc1234`） |
-| ロゴ形式 | `assets/logo_src.png` を `tools/make_logo.py` で RGB565 の C++ 配列に変換して保持する。M5Dial 版は `assets/logo.cpp`（204x87 px / 34.7 KB）。**LCD-2.1 版は `assets/lcd21/logo.cpp` / `logo.h`（394x167 px / 129 KB）**。生成: `python tools/make_logo.py --out-c assets/lcd21/logo.cpp --out-h assets/lcd21/logo.h --max-width 408 --max-height 174`（元画像の縦横比で 394x167 になる）。Flash 上の const 配列を LVGL の `lv_image_dsc_t`（RGB565）から直接参照し、RAM へコピーしない |
+| ロゴ形式 | `assets/logo_src.png` を `tools/make_logo.py` で RGB565 の C++ 配列に変換して保持する。M5Dial 版は `assets/logo.cpp`（204x86 px / 34.3 KB。2026-10-13 に LCD-2.1 と同じ反転方式で作り直し、縁のジャギーを消した）。**LCD-2.1 版は `assets/lcd21/logo.cpp` / `logo.h`（394x167 px / 129 KB）**。生成: `python tools/make_logo.py --out-c assets/lcd21/logo.cpp --out-h assets/lcd21/logo.h --max-width 408 --max-height 174`（元画像の縦横比で 394x167 になる）。Flash 上の const 配列を LVGL の `lv_image_dsc_t`（RGB565）から直接参照し、RAM へコピーしない |
 | アニメーション | 0.0–0.8 s フェードイン → 1.6 s 保持 → 0.6 s フェードアウト（合計 3.0 s）。**バックライトの LEDC PWM（GPIO6）のランプで実現**する（画素のアルファ合成は 16 bit 階調では縞が出るうえ CPU を食う） |
 | 短縮条件 | フェードイン完了時点で CAN 受信済みなら保持を 1.6 s → 0.4 s に短縮する |
 | 差し替え | 作者: `assets/logo_src.png` を置き換えて上記の生成コマンドを実行する。**配布先ユーザー**: `user/logo.png` を置いて `python tools/make_logo.py --user` を実行する（`user/logo.cpp` / `logo.h` ができ、ビルドで自動的に差し替わる。`SWD-14`） |
