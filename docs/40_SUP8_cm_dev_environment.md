@@ -5,7 +5,7 @@
 | 文書ID | `DOC-40` |
 | プロセス | SUP.8 構成管理 / SUP.9 問題解決 / SUP.10 変更要求 / MAN.3 プロジェクト管理 / SPL.2 リリース |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-11 |
+| 最終更新 | 2026-10-12 |
 
 ---
 
@@ -160,7 +160,9 @@ ffmpeg -f dshow -video_size 1280x720 -i video="5MP USB Camera" -frames:v 1 -upda
 仕様上の既定値（`defaultConfig()`・`theme.h`）は文書の値のまま変えず、ユーザー設定は起動時に重ねるだけにする（`SWD-14`）。
 
 `tools/build.ps1` / `flash.ps1` / `monitor.ps1` / `flash_and_monitor.ps1` は `lcd21` 系を既定にした
-（`-Sim` で `lcd21_sim`、`-Can1M` で `lcd21_1m`、`-Board m5dial` で旧環境）。ポートを省くと CH343（VID 1A86）を探す。
+（`-Sim` で `lcd21_sim`、`-Can1M` で `lcd21_1m`、`-Board m5dial` で M5Dial）。ポートを省くと、LCD-2.1 は CH343（VID 1A86）、M5Dial は ESP32-S3 のネイティブ USB（VID 303A）を探す。
+
+**M5Dial も配布対象**（2026-10-12。DOC-12 §8.5 / `SWR-68`）。手順書と Skill は両機種を扱う。M5Dial の CAN の通信速度を 1 Mbps にするときは、`user_config.h` の `USER_CAN_BITRATE_KBPS` を使う（`lcd21_1m` に当たる環境は作らない）。
 
 ## 3. ブランチ戦略・コミット規約
 

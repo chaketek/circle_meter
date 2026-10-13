@@ -3,7 +3,7 @@
 rusEFI と CAN で接続し、**空燃比（λ / AFR）と排気温度**を表示する丸形メータ。
 ユーノスロードスター (NA) への搭載を想定。
 
-ハードウェアは **Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B**（ESP32-S3R8 / 2.1" 丸型 **480×480** / 静電容量タッチ）+ **M5Stack Unit Mini CAN**（トランシーバと 12V→5V 変換を兼ねる）。
+ハードウェアは **Waveshare ESP32-S3-Touch-LCD-2.1 / 2.1B**（ESP32-S3R8 / 2.1" 丸型 **480×480** / 静電容量タッチ）または **M5Stack Dial v1.1**（1.28" 丸型 240×240。機能は一部）+ **M5Stack Unit Mini CAN**（トランシーバと 12V→5V 変換を兼ねる）。
 
 ## このメータを使う方へ
 
@@ -18,7 +18,7 @@ Git や Claude Code を使ったことがなくても、Windows の PC で書き
 以下は開発者向けの情報です。
 
 > 2026-10-01 に対象ハードを M5Stack Dial v1.1 から変更しました。経緯は [DOC-12 §8](docs/12_SYS3_system_arch.md)。
-> LCD-2.1 向けの本番コードは `src/main_lcd21.cpp` / `lib/ui/` です。M5Dial 向けの `src/main.cpp`（`m5dial` 環境）は廃止予定です。
+> LCD-2.1 向けの本番コードは `src/main_lcd21.cpp` / `lib/ui/` です。**M5Stack Dial v1.1 も配布対象**です（2026-10-12〜。`src/main.cpp`、`m5dial` / `m5dial_sim` 環境。WBO の λ・センサ状態・ユーザー設定・ロゴに対応し、表示はリングのみ。[DOC-12 §8.5](docs/12_SYS3_system_arch.md)）。
 
 | | |
 |---|---|
@@ -101,6 +101,8 @@ python -m platformio test -e native
 | `lcd21_sim` | CAN を繋がずに画面だけを動かすスイープデモ（λ 0.68 ⇄ 1.36 を 8.5 秒、EGT 300 ⇄ 960 °C） | `./tools/flash.ps1 -Sim` |
 | `lcd21` | 実 CAN 版（500 kbps。rusEFI の既定） | `./tools/flash.ps1` |
 | `lcd21_1m` | 実 CAN 版（1 Mbps。作者の車両用） | `./tools/flash.ps1 -Can1M` |
+| `m5dial_sim` | M5Dial のスイープデモ | `./tools/flash.ps1 -Board m5dial -Sim` |
+| `m5dial` | M5Dial の実 CAN 版（通信速度は `user/user_config.h` の `USER_CAN_BITRATE_KBPS`） | `./tools/flash.ps1 -Board m5dial` |
 
 書き込み後は `python tools/meter_log.py` で起動ログを読み、書き込み・ユーザー設定・CAN 受信を判定できます。
 デモはシリアル（115200）から 1 文字送ると操作できます: `h` 停止/再開、`0`〜`9` その位置で停止、`m` AFR/λ 切替、`v` 表示デザイン切替。

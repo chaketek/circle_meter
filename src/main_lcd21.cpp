@@ -23,6 +23,7 @@
 #include "page_splash.h"
 #include "signal_store.h"
 #include "sweep_sim.h"
+#include "user_config_log.h"
 #include "user_overrides.h"
 
 #ifndef CM_ENABLE_CAN_SIM
@@ -167,10 +168,16 @@ void fadeBacklight(int fromPercent, int toPercent, uint32_t durationMs) {
     g_display.setBrightnessPercent(static_cast<uint8_t>(toPercent));
 }
 
-#ifdef CM_ENABLE_CAN_SIM
+void reprintBootInfo();
+
 void handleDebugKeys() {
     while (Serial.available() > 0) {
         const int c = Serial.read();
+        if (c == 'i') {
+            reprintBootInfo();
+            continue;
+        }
+#ifdef CM_ENABLE_CAN_SIM
         if (c == 'h') {
             g_simHold = !g_simHold.load();
             Serial.printf("sim: %s\n", g_simHold.load() ? "HOLD" : "RUN");
@@ -188,9 +195,9 @@ void handleDebugKeys() {
             g_cfg.showAfr = !g_cfg.showAfr;
             Serial.printf("display: %s\n", g_cfg.showAfr ? "AFR" : "LAMBDA");
         }
+#endif
     }
 }
-#endif
 
 #ifndef CM_ENABLE_CAN_SIM
 /// tools/bench_check.py が読む行（M5Dial 版 src/main.cpp と同じ形式。DOC-30 の IT-* で使う）。
@@ -221,32 +228,7 @@ void printCanStatus(uint32_t nowMs, uint32_t frameUs) {
 
 // SWR-67: 配布先ユーザーの設定が効いたかを、書き込み後に Skill / 手順書がこの行で確かめる
 UserConfigResult g_userResult;
-
-void printGroups(const char* label, uint16_t mask) {
-    Serial.printf("  %s:", label);
-    if (mask == 0) {
-        Serial.print(" (none)");
-    }
-    for (uint8_t g = 0; g < static_cast<uint8_t>(UserGroup::Count); ++g) {
-        if (mask & (1u << g)) {
-            Serial.printf(" %s", userGroupName(static_cast<UserGroup>(g)));
-        }
-    }
-    Serial.println();
-}
-
-void printUserConfig() {
-    Serial.printf("user config: %s\n",
-                  CM_HAS_USER_CONFIG ? "present (user/user_config.h)" : "none (defaults)");
-    if (!CM_HAS_USER_CONFIG) {
-        return;
-    }
-    printGroups("applied", g_userResult.appliedMask);
-    if (g_userResult.rejectedMask != 0) {
-        // static_assert をすり抜けた組（既定値との組み合わせで単調性が崩れたなど）。既定値のまま動く
-        printGroups("REJECTED (kept defaults)", g_userResult.rejectedMask);
-    }
-}
+bool g_uiReady = false;
 
 void printBanner() {
     Serial.printf("\ncircle_meter %s  (LCD-2.1 / LVGL %d.%d.%d)\n", CM_FW_VERSION, LVGL_VERSION_MAJOR,
@@ -261,7 +243,21 @@ void printBanner() {
                   CM_TWAI_RX_GPIO, static_cast<unsigned>(g_cfg.canBitrateKbps),
                   static_cast<unsigned>(g_cfg.canBaseId));
 #endif
-    printUserConfig();
+    printUserConfig(g_userResult);
+}
+
+void printUiReady() {
+    Serial.printf("ui ready: sram %u KB free / psram %u KB free\n",
+                  static_cast<unsigned>(ESP.getFreeHeap() / 1024),
+                  static_cast<unsigned>(ESP.getFreePsram() / 1024));
+}
+
+/// SWR-68: シリアルから 'i' で起動ログを出し直す（tools/meter_log.py が使う。両機種で同じ）
+void reprintBootInfo() {
+    printBanner();
+    if (g_uiReady) {
+        printUiReady();
+    }
 }
 
 }  // namespace
@@ -336,9 +332,8 @@ void setup() {
     pump(150);
     fadeBacklight(0, target, kMainFadeInMs);
 
-    Serial.printf("ui ready: sram %u KB free / psram %u KB free\n",
-                  static_cast<unsigned>(ESP.getFreeHeap() / 1024),
-                  static_cast<unsigned>(ESP.getFreePsram() / 1024));
+    g_uiReady = true;
+    printUiReady();
 }
 
 void loop() {
@@ -356,9 +351,7 @@ void loop() {
         g_active->onUpdate(g_store.snapshot(now), g_cfg);
     }
 
-#ifdef CM_ENABLE_CAN_SIM
     handleDebugKeys();
-#endif
     const uint32_t wait = g_port.service();
 
     if (static_cast<int32_t>(now - nextStatMs) >= 0) {

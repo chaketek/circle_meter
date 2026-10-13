@@ -5,7 +5,7 @@
 | 文書ID | `DOC-22` |
 | プロセス | SWE.3 詳細設計・ユニット構築（テーラリング: 公開 I/F 契約と状態遷移に限定） |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-11 |
+| 最終更新 | 2026-10-12 |
 
 ---
 
@@ -407,8 +407,23 @@ const char* userGroupName(UserGroup g);
 | 値の出どころ | `include/user_overrides.h` が `user/user_config.h` を `__has_include` で取り込み、`#define USER_*` から `UserConfig` を作る（`cm::userConfigFromBuild()`）。ドメイン層は `user_config.h` を読まない（単体テストが利用者の設定に左右されないように） |
 | ビルド時の検査 | `user_overrides.h` の `static_assert` が単独の範囲（輝度 1-5、色 0x000000-0xFFFFFF、ビットレート 250/500/1000 など）と、同じ組の中の大小関係を日本語のメッセージで止める |
 | 配色 | `theme.h` が同じヘッダを取り込み、`USER_COLOR_*` が定義されていればその値を使う（`DOC-23 §8.1`） |
-| 起動ロゴ | `tools/make_logo.py --user` が `user/logo.png` から `user/logo.cpp` / `logo.h` を作る。`tools/select_logo.py`（pre スクリプト）が `user/logo.cpp` があればそれをビルドに入れ、`-I user` を `-I assets/lcd21` より前に置いて `logo.h` も差し替わる |
+| 起動ロゴ | `tools/make_logo.py --user` が `user/logo.png` から**機種ごと**に `user/generated/<lcd21|m5dial>/user_logo.cpp` / `user_logo.h` と `user/logo_preview_<機種>.png` を作る（LCD-2.1: 408×174 の枠、M5Dial: 204×140 の枠）。`tools/select_logo.py`（pre スクリプト）が環境の機種を見て、あればその `user_logo.cpp` を既定のロゴの代わりにビルドへ入れ、インクルードパスと `CM_USER_LOGO` を足す。スプラッシュは `CM_USER_LOGO` のとき `user_logo.h`、それ以外は `logo.h` を読む（名前を分けて、インクルードパスの順に頼らない。2026-10-12 改訂。当初は `user/logo.cpp` 1 つで LCD-2.1 専用） |
 | 起動ログ | `user config: present / none`、反映した組と戻した組の名前を出す |
+
+### 8.6 `SWD-15` M5Dial 版のアプリケーション（`src/main.cpp`）
+
+`SWR-68` の実装。LCD-2.1 版と**同じドメイン層・受信タスク**を使い、描画だけを M5GFX で行う。
+
+| 部分 | 使うもの |
+|---|---|
+| CAN 受信 | `startCanRxTask()` / `startCanHealthTask()`（`lib/hal/`。WBO のデコードを含む） |
+| 表示値 | `DisplayFilter`（`SWD-13`。λ / EGT の LPF・鮮度・センサ状態） |
+| センサ状態の文字 | `formatSensorStatus(buf, size, info, degSuffix)`（`lib/signal_model/display_text.h`。M5Dial は `degSuffix = "C"`） |
+| 色 | `include/theme_colors.h`（`USER_COLOR_*` で上書き。LVGL に依存しないので両機種で共有） |
+| ユーザー設定 | `applyUserConfig()` と `printUserConfig()`（`include/user_config_log.h`。両機種で同じ出力） |
+| デモ | `SweepSim`（LCD-2.1 版と同じスイープ。WBO の信号として入れる） |
+
+センサ状態の文字は、λ が無効なとき主数値と EGT の間（y = 136 付近）に、円に収まる最大の ASCII 書体で描く（DOC-23 §6.1）。
 
 ## 9. アプリケーション起動シーケンス（`SWD-09`）
 
@@ -450,5 +465,6 @@ LVGL 初期化より前に `CanDriver::begin()` とタスク生成を行う。
 | `CM_BOARD_LCD21` | 未定義 | Waveshare ESP32-S3-Touch-LCD-2.1 向け。`lib/hal/display_hal_lcd21.cpp` が有効になる |
 | `CM_FW_VERSION` | git describe | ビルド時に埋め込み（`SWR-102`） |
 | `CM_LOG_LEVEL` | `3` (INFO) | シリアルログレベル |
+| `CM_USER_LOGO` | 未定義 | `tools/select_logo.py` が、その機種の `user/generated/<機種>/user_logo.cpp` があるときに定義する（`SWD-14`） |
 | `CM_CAN_BITRATE_KBPS` | 未定義（500） | CAN のビットレートを上書きする。`lcd21_1m` 環境が 1000 を与える（作者の車両用）。`user/user_config.h` の `USER_CAN_BITRATE_KBPS` がさらに優先 |
 | `USER_*` | 未定義 | `user/user_config.h` で定義する配布先ユーザーの設定（`SWD-14`、雛形は `user/user_config.example.h`） |

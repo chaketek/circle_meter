@@ -1,36 +1,61 @@
-// SWA-10 AppController
+// SWA-10 AppController（M5Stack Dial v1.1 版。SWR-68 / SWD-15）
 //
-// フェーズ P1/P2（DOC-40 §7）のブリングアップ用ファームウェア。
-//   - CAN を Listen Only で開始し、rusEFI の verbose broadcast を受信する
-//   - λ / EGT / 状態をシリアルと画面に最小限のテキストで出す
-//   - OPN-02（PORT.B の GPIO 割当・TX/RX の向き）を実測で確定させるのが目的
+// LCD-2.1 版（main_lcd21.cpp）と同じドメイン層・受信タスクを使い、描画だけを M5GFX
+// で行う（リングのデザインのみ）。
+//   - λ は rusEFI WBO の StandardData から取る（SYS-03 / DEC-11。共通の CanRxTask）
+//   - λ が無効なときはセンサの状態を出す（SYS-22。M5GFX の内蔵フォントは ASCII のみなので温度の単位は C）
+//   - 配布先ユーザーの設定 user/user_config.h と起動ロゴを使う（SWR-67）
+//   - 起動ログは LCD-2.1 版と同じ形式。シリアルから 'i' で出し直す（ネイティブ USB
+//   は起動直後の出力を取りこぼすため）
 //
-// LVGL によるページ実装（SWA-11/20/21/22）はフェーズ P4 で追加する。
+// この版では CAN への送出は一切行わない（CLAUDE.md 規則 1 / RSK-06）。
 #include <M5Dial.h>
 
-#include "can_driver.h"
+#include <atomic>
+
 #include "config.h"
-#include "logo.h"
-#include "rusefi_decoder.h"
+#include "display_filter.h"
+#include "display_text.h"
+#include "lambda_sensor_state.h"
 #include "signal_store.h"
+#include "sweep_sim.h"
+#include "theme_colors.h"
 #include "units.h"
+#include "user_config_log.h"
+#include "user_overrides.h"
+
+// SWD-14: 配布先ユーザーのロゴ（tools/select_logo.py が CM_USER_LOGO を定義する）
+#ifdef CM_USER_LOGO
+#include "user_logo.h"
+#else
+#include "logo.h"
+#endif
+
+#ifndef CM_ENABLE_CAN_SIM
+#include "can_driver.h"
+#include "can_rx_task.h"
+#endif
 
 #ifndef CM_FW_VERSION
 #define CM_FW_VERSION "unknown"
 #endif
 
 using namespace cm;
+namespace color = cm::ui::color;
 
 namespace {
 
 Config g_cfg;
 SignalStore g_store;
+DisplayFilter g_filter;
+UserConfigResult g_userResult;
+bool g_uiReady = false;
+#ifndef CM_ENABLE_CAN_SIM
 CanDriver g_can;
+#endif
 
-// 暫定 UI 用のオフスクリーンバッファ。
-// 直接ディスプレイに描くと全消去 -> 再描画の間が見えて明滅する。
-// 1 フレーム分をまとめて転送することでティアリングと明滅を消す。
-// 本番 UI (P4) では LVGL の部分バッファ 2 面に置き換える (DEC-05)。
+// 全画面のオフスクリーンバッファ。直接描くと全消去 -> 再描画の間が見えて明滅するため、1
+// フレーム分をまとめて転送する
 M5Canvas g_canvas(&M5Dial.Display);
 bool g_canvasReady = false;
 
@@ -42,7 +67,7 @@ constexpr uint32_t kSplashHoldMs      = 1600;
 constexpr uint32_t kSplashHoldShortMs = 400;  // CAN を受信済みのとき
 constexpr uint32_t kSplashFadeOutMs   = 600;
 
-// 円形画面のレイアウト（DOC-23 §2）
+// 円形画面のレイアウト（DOC-23 §2 / §8.2）
 constexpr int kCx         = 120;
 constexpr int kCy         = 120;
 constexpr int kRingOuter  = 118;
@@ -50,83 +75,60 @@ constexpr int kRingInner  = 96;  // この内側が数値の描画領域
 constexpr int kTextMargin = 2;   // リングに触れないための余白
 
 // 縦方向のバンド割り。各要素が重ならないよう高さ上限を決めておく。
-constexpr int kLabelY   = 52;   // 単位ラベル（その 18px 上に鮮度）
-constexpr int kMainY    = 104;  // 主数値の垂直中心
-constexpr int kMainMaxH = 80;   // 主数値の高さ上限
-constexpr int kEgtY     = 168;  // 排気温度の垂直中心
-constexpr int kEgtMaxH  = 44;   // 排気温度の高さ上限
-constexpr int kStatusY  = 202;  // ブリングアップ用ステータス
+constexpr int kLabelY     = 52;   // 単位ラベル（その 18px 上に鮮度）
+constexpr int kMainY      = 104;  // 主数値の垂直中心
+constexpr int kMainMaxH   = 80;   // 主数値の高さ上限
+constexpr int kSensorY    = 136;  // λ センサの状態（λ が無効なとき。DOC-23 §8.2）
+constexpr int kSensorMaxH = 16;
+constexpr int kEgtY       = 168;  // 排気温度の垂直中心
+constexpr int kEgtMaxH    = 44;   // 排気温度の高さ上限
+constexpr int kStatusY    = 202;  // 診断（f/s・fps）
 
 // 実フレームレートの計測（SYS-12 の早期データ点。正式には QT-03 で測る）
 uint32_t g_frameCount   = 0;
 uint32_t g_frameUsTotal = 0;
 
-// ---------------------------------------------------------------- CAN 受信タスク
-// SWA-02 CanRxTask: Core 0 に固定する（DEC-03）
-void canRxTask(void*) {
-#ifdef CM_ENABLE_CAN_SIM
-    // SWR-100: 実 CAN の代わりに λ / EGT をスイープする
-    float lambda = 0.68f;
-    float egtC   = 300.0f;
-    int8_t dir   = 1;
-    for (;;) {
-        const uint32_t now = millis();
-        lambda += 0.004f * dir;
-        if (lambda > 1.36f || lambda < 0.68f)
-            dir = -dir;
-        egtC = 300.0f + (lambda - 0.68f) * 900.0f;
-
-        g_store.update(SignalId::Lambda1, lambda, now);
-        g_store.update(SignalId::Egt1, egtC, now);
-        g_store.update(SignalId::Rpm, 1200.0f + (lambda - 0.68f) * 6000.0f, now);
-        g_store.update(SignalId::Clt, 85.0f, now);
-        g_store.update(SignalId::BattVolt, 13.8f, now);
-        g_can.mutableStats().rxFrames++;
-        vTaskDelay(pdMS_TO_TICKS(50));
-    }
-#else
-    twai_message_t msg;
-    for (;;) {
-        if (!g_can.receive(msg, 100)) {
-            continue;
-        }
-        const uint32_t now = millis();
-        const auto r = rusefi::decodeFrame(msg.identifier, msg.data, msg.data_length_code, g_cfg.canBaseId);
-
-        if (!r.accepted) {
-            if (msg.data_length_code < rusefi::kFrameDlc) {
-                g_can.mutableStats().badDlc++;
-            } else {
-                g_can.mutableStats().unknownId++;
-            }
-            continue;
-        }
-        g_can.mutableStats().rxFrames++;
-
-        for (uint8_t i = 0; i < r.count; ++i) {
-            const SignalId id = r.signals[i].id;
-            const float v     = r.signals[i].value;
-
-            // SYS-42 / RSK-09: rusEFI が未構成センサに送る 0 をストアへ入れない。
-            // 入れなければ鮮度が Fresh にならず、UI は自動的に "--" を出す。
-            if ((id == SignalId::Lambda1 || id == SignalId::Lambda2) && !rusefi::isLambdaValid(v)) {
-                continue;
-            }
-            if ((id == SignalId::Egt1 || id == SignalId::Egt2) && !rusefi::isEgtValid(v)) {
-                continue;
-            }
-            g_store.update(id, v, now);
-        }
-    }
-#endif
+uint16_t c565(uint32_t hex) {
+    return M5Dial.Display.color565((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF);
 }
 
-// ---------------------------------------------------------------- CAN 健全性タスク
-void canHealthTask(void*) {
+// ---------------------------------------------------------------- 信号源
+#ifdef CM_ENABLE_CAN_SIM
+// デモの操作（USB シリアルから 1 文字）: h 停止/再開、0-9 その位置で停止、m AFR/λ 切替、i 起動ログ
+std::atomic<bool> g_simHold{false};
+std::atomic<float> g_simSeek{-1.0f};
+
+// SWR-100: 実 CAN の代わりに λ / EGT をスイープする（LCD-2.1 版と同じ。WBO の信号として入れる）
+void simTask(void*) {
+    SweepSim sim;
+    uint32_t last = millis();
     for (;;) {
-        g_can.poll(millis());
-        vTaskDelay(pdMS_TO_TICKS(1000));
+        vTaskDelay(pdMS_TO_TICKS(50));
+        const uint32_t now = millis();
+        const float seek   = g_simSeek.exchange(-1.0f);
+        if (seek >= 0.0f) {
+            sim.seek(seek);
+        }
+        const SweepOutput o = sim.step(g_simHold.load() ? 0 : now - last);
+        last                = now;
+        g_store.update(SignalId::WboLambda, o.lambda, now);
+        g_store.update(SignalId::WboValid, 1.0f, now);
+        g_store.update(SignalId::WboStatus, 2.0f, now);
+        g_store.update(SignalId::WboTempC, 780.0f, now);
+        g_store.update(SignalId::Egt1, o.egtC, now);
+        g_store.update(SignalId::Rpm, o.rpm, now);
+        g_store.update(SignalId::Clt, 85.0f, now);
+        g_store.update(SignalId::BattVolt, 13.8f, now);
     }
+}
+#endif
+
+bool signalSourceSeen() {
+#ifdef CM_ENABLE_CAN_SIM
+    return false;  // デモではスプラッシュを短縮しない（ロゴを見せる）
+#else
+    return g_can.stats().rxFrames > 0;
+#endif
 }
 
 // ---------------------------------------------------------------- 輝度
@@ -169,10 +171,12 @@ void showSplash(uint8_t targetLevel) {
     d.setBrightness(0);
     d.fillScreen(TFT_BLACK);
 
+    // tools/make_logo.py の --user のプレビューと同じ位置（中央から 8 px 上）
     const int x = (d.width() - cm_logo_width) / 2;
     const int y = (d.height() - cm_logo_height) / 2 - 8;
     d.pushImage(x, y, cm_logo_width, cm_logo_height, reinterpret_cast<const lgfx::rgb565_t*>(cm_logo_data));
 
+    d.setFont(&fonts::Font0);
     d.setTextDatum(middle_center);
     d.setTextSize(1);
     d.setTextColor(TFT_DARKGREY, TFT_BLACK);
@@ -183,7 +187,7 @@ void showSplash(uint8_t targetLevel) {
     fadeBacklight(0, target, kSplashFadeInMs);
 
     // SYS-18: ECU からの受信が既に始まっていれば長く見せる必要はない
-    delay((g_can.stats().rxFrames > 0) ? kSplashHoldShortMs : kSplashHoldMs);
+    delay(signalSourceSeen() ? kSplashHoldShortMs : kSplashHoldMs);
 
     fadeBacklight(target, 0, kSplashFadeOutMs);
     d.fillScreen(TFT_BLACK);
@@ -259,12 +263,12 @@ void drawFitted(LovyanGFX& d, const char* str, int yc, int r, bool numericOnly, 
     const TextFit f = fitText(d, str, yc, r, numericOnly, maxHeight);
     d.setFont(f.font);
     d.setTextSize(f.size);
-    d.setTextColor(color, TFT_BLACK);
+    d.setTextColor(color, c565(color::kBg));
     d.setTextDatum(middle_center);
     d.drawString(str, kCx, yc);
 }
 
-// ---------------------------------------------------------------- 暫定 UI
+// ---------------------------------------------------------------- 本画面（リング。DOC-23 §8.2）
 const char* freshnessLabel(Freshness f) {
     switch (f) {
         case Freshness::Fresh:
@@ -276,93 +280,185 @@ const char* freshnessLabel(Freshness f) {
     }
 }
 
-uint16_t zoneColor(LambdaZone z) {
-    // DOC-23 §8 のパレット（P4 で Theme に移す）
-    switch (z) {
-        case LambdaZone::RichHeavy:
-            return M5Dial.Display.color565(0x2E, 0x7D, 0xFF);
-        case LambdaZone::Rich:
-            return M5Dial.Display.color565(0x00, 0xC8, 0xD7);
-        case LambdaZone::Optimal:
-            return M5Dial.Display.color565(0x17, 0xD1, 0x4B);
-        case LambdaZone::Lean:
-            return M5Dial.Display.color565(0xFF, 0xC4, 0x00);
+/// DOC-23 §6.1: センサ状態の文字の色（LCD-2.1 版の sensorStatusColorHex と同じ規則）
+uint32_t sensorColorHex(const LambdaSensorInfo& info) {
+    switch (info.state) {
+        case LambdaSensorState::SensorOff:
+            return color::kTextSub;
+        case LambdaSensorState::WarmingUp:
+        case LambdaSensorState::Check:
+            return color::kWarn;
         default:
-            return M5Dial.Display.color565(0xFF, 0x2D, 0x2D);
+            return color::kDanger;  // 故障・通信なし
     }
 }
 
-void drawBringupScreen(const Snapshot& snap) {
+uint32_t egtColorHex(const DisplayValues& v) {
+    if (v.egtStale) {
+        return color::kDisabled;
+    }
+    switch (v.egtLevel) {
+        case EgtLevel::Danger:
+            return color::kDanger;
+        case EgtLevel::Warn:
+            return color::kWarn;
+        default:
+            return color::kEgtNormal;
+    }
+}
+
+void drawMainScreen(const DisplayValues& v) {
     // スプライトが確保できていればそこへ、駄目なら直接ディスプレイへ描く
     LovyanGFX& d =
         g_canvasReady ? static_cast<LovyanGFX&>(g_canvas) : static_cast<LovyanGFX&>(M5Dial.Display);
-    d.fillScreen(TFT_BLACK);
+    d.fillScreen(c565(color::kBg));
 
-    float lambda         = 0.0f;
-    const bool hasLambda = snap.get(SignalId::Lambda1, lambda);
-    const auto zone      = zoneOf(lambda, g_cfg.zones);
-
-    // 外周バーの簡易版（P4 で LambdaRing に置き換える / SWD-08）
-    // 数値より先に描くことで、はみ出した数値が上書きされずバーの上に載る
-    d.fillArc(kCx, kCy, kRingInner, kRingOuter, 135, 135 + 270, d.color565(0x1A, 0x1A, 0x1A));
-    if (hasLambda) {
-        const float ratio = ringRatio(lambda, g_cfg.ringLo, g_cfg.ringHi);
-        const int sweep   = static_cast<int>(ratio * 270.0f);
+    // 外周バー。数値より先に描くことで、はみ出した数値が上書きされずバーの上に載る
+    d.fillArc(kCx, kCy, kRingInner, kRingOuter, 135, 135 + 270, c565(color::kTrack));
+    if (v.hasLambda) {
+        const int sweep = static_cast<int>(v.ringRatio * 270.0f);
         if (sweep > 0) {
-            d.fillArc(kCx, kCy, kRingInner, kRingOuter, 135, 135 + sweep, zoneColor(zone));
+            d.fillArc(kCx, kCy, kRingInner, kRingOuter, 135, 135 + sweep,
+                      c565(v.lambdaStale ? color::kDisabled : ui::zoneColorHex(v.zone)));
         }
     }
 
     const int rText = kRingInner - kTextMargin;
-    char buf[16];
+    char buf[32];
 
-    // 鮮度（上端）
+    // 鮮度（上端）と単位ラベル
     d.setFont(&fonts::Font0);
     d.setTextSize(1);
     d.setTextDatum(middle_center);
-    d.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    d.drawString(freshnessLabel(snap.freshnessOf(SignalId::Lambda1)), kCx, kLabelY - 18);
-
-    // 単位ラベル
+    d.setTextColor(c565(color::kTextSub), c565(color::kBg));
+    d.drawString(freshnessLabel(v.lambdaFr), kCx, kLabelY - 18);
     d.drawString(g_cfg.showAfr ? "AFR" : "LAMBDA", kCx, kLabelY);
 
-    // 主数値（λ / AFR）
-    if (hasLambda) {
+    // 主数値（λ / AFR）。Lost では "--"（古い値を出さない。RSK-01）
+    if (v.hasLambda) {
         if (g_cfg.showAfr) {
-            snprintf(buf, sizeof(buf), "%.1f", lambdaToAfr(lambda, g_cfg.stoich));
+            snprintf(buf, sizeof(buf), "%.1f", lambdaToAfr(v.lambda, g_cfg.stoich));
         } else {
-            snprintf(buf, sizeof(buf), "%.3f", lambda);
+            snprintf(buf, sizeof(buf), "%.3f", v.lambda);
         }
-        drawFitted(d, buf, kMainY, rText, true, kMainMaxH, zoneColor(zone));
+        drawFitted(d, buf, kMainY, rText, true, kMainMaxH,
+                   c565(v.lambdaStale ? color::kDisabled : ui::zoneColorHex(v.zone)));
     } else {
-        drawFitted(d, "--", kMainY, rText, true, kMainMaxH, TFT_DARKGREY);
+        drawFitted(d, "--", kMainY, rText, true, kMainMaxH, c565(color::kDisabled));
+    }
+
+    // SYS-22 / SWR-68: λ が無効なときはその理由（停止中 / 加熱中 / 故障 / 通信なし）
+    if (!v.hasLambda && v.sensor.state != LambdaSensorState::Ok) {
+        formatSensorStatus(buf, sizeof(buf), v.sensor, kDegCAscii);
+        drawFitted(d, buf, kSensorY, rText, false, kSensorMaxH, c565(sensorColorHex(v.sensor)));
     }
 
     // 排気温度
-    float egtC = 0.0f;
-    if (snap.get(SignalId::Egt1, egtC)) {
-        const auto lv           = levelOf(egtC, g_cfg.egt);
-        const uint16_t egtColor = (lv == EgtLevel::Danger) ? d.color565(0xFF, 0x2D, 0x2D)
-                                  : (lv == EgtLevel::Warn) ? d.color565(0xFF, 0xC4, 0x00)
-                                                           : TFT_LIGHTGREY;
-        snprintf(buf, sizeof(buf), "%dC", static_cast<int>(egtC + 0.5f));
-        drawFitted(d, buf, kEgtY, rText, false, kEgtMaxH, egtColor);
+    if (v.hasEgt) {
+        snprintf(buf, sizeof(buf), "%dC", static_cast<int>(v.egtC + 0.5f));
+        drawFitted(d, buf, kEgtY, rText, false, kEgtMaxH, c565(egtColorHex(v)));
     } else {
-        drawFitted(d, "--C", kEgtY, rText, false, kEgtMaxH, TFT_DARKGREY);
+        drawFitted(d, "--C", kEgtY, rText, false, kEgtMaxH, c565(color::kDisabled));
     }
 
-    // ブリングアップ用ステータス（下端）
+    // 診断（下端）
     d.setFont(&fonts::Font0);
     d.setTextSize(1);
     d.setTextDatum(middle_center);
-    d.setTextColor(TFT_DARKGREY, TFT_BLACK);
-    snprintf(buf, sizeof(buf), "%lu f/s  %lu fps", static_cast<unsigned long>(g_can.stats().framesPerSec),
+    d.setTextColor(c565(color::kTextSub), c565(color::kBg));
+#ifdef CM_ENABLE_CAN_SIM
+    const unsigned long framesPerSec = 0;
+#else
+    const unsigned long framesPerSec = g_can.stats().framesPerSec;
+#endif
+    snprintf(buf, sizeof(buf), "%lu f/s  %lu fps", framesPerSec,
              static_cast<unsigned long>(g_frameUsTotal ? 1000000UL * g_frameCount / g_frameUsTotal : 0));
     d.drawString(buf, kCx, kStatusY);
 
     if (g_canvasReady) {
         g_canvas.pushSprite(0, 0);
     }
+}
+
+// ---------------------------------------------------------------- シリアル
+// tools/meter_log.py / bench_check.py が読む行。LCD-2.1 版と同じ形式にする（SWR-68）
+void printBanner() {
+    Serial.printf("\ncircle_meter %s  (M5Dial / M5GFX)\n", CM_FW_VERSION);
+    Serial.printf("sdk %s / sram %u KB free\n", ESP.getSdkVersion(),
+                  static_cast<unsigned>(ESP.getFreeHeap() / 1024));
+#ifdef CM_ENABLE_CAN_SIM
+    Serial.println("signal source: SIMULATOR (sweep)");
+#else
+    Serial.printf("signal source: CAN TX=GPIO%d RX=GPIO%d %u kbps base 0x%03X\n", CM_TWAI_TX_GPIO,
+                  CM_TWAI_RX_GPIO, static_cast<unsigned>(g_cfg.canBitrateKbps),
+                  static_cast<unsigned>(g_cfg.canBaseId));
+#endif
+    printUserConfig(g_userResult);
+}
+
+void printUiReady() {
+    Serial.printf("ui ready: sram %u KB free / canvas %s\n", static_cast<unsigned>(ESP.getFreeHeap() / 1024),
+                  g_canvasReady ? "ok" : "FAILED");
+}
+
+/// SWR-68: 'i' で起動ログを出し直す。M5Dial のネイティブ USB は、PC がポートを開く前の出力を取りこぼす
+void reprintBootInfo() {
+    printBanner();
+    if (g_uiReady) {
+        printUiReady();
+    }
+}
+
+void handleSerialKeys() {
+    while (Serial.available() > 0) {
+        const int c = Serial.read();
+        if (c == 'i') {
+            reprintBootInfo();
+        } else if (c == 'm') {
+            g_cfg.showAfr = !g_cfg.showAfr;
+            Serial.printf("display: %s\n", g_cfg.showAfr ? "AFR" : "LAMBDA");
+        }
+#ifdef CM_ENABLE_CAN_SIM
+        else if (c == 'h') {
+            g_simHold = !g_simHold.load();
+            Serial.printf("sim: %s\n", g_simHold.load() ? "HOLD" : "RUN");
+        } else if (c >= '0' && c <= '9') {
+            g_simSeek = static_cast<float>(c - '0') / 9.0f;
+            g_simHold = true;
+            Serial.printf("sim: hold at %c/9\n", c);
+        }
+#endif
+    }
+}
+
+void printStatus(uint32_t nowMs, uint32_t frameUs) {
+#ifdef CM_ENABLE_CAN_SIM
+    Serial.printf("fps=%lu | draw=%luus heap=%u\n", (unsigned long)(frameUs ? 1000000UL / frameUs : 0),
+                  (unsigned long)frameUs, static_cast<unsigned>(ESP.getFreeHeap()));
+    (void)nowMs;
+#else
+    // LCD-2.1 版の printCanStatus と同じ形式（tools/bench_check.py / meter_log.py が読む）
+    static const char* const kSensorNames[] = {
+        "OK",    "NO_SIGNAL", "OFF", "WARMUP", "CHECK", "FAULT_NO_HEAT", "FAULT_OVERHEAT", "FAULT_UNDERHEAT",
+        "NO_WBO"};
+    const CanStats& st            = g_can.stats();
+    const Snapshot snap           = g_store.snapshot(nowMs);
+    const LambdaSensorInfo sensor = classifyLambdaSensor(snap);
+    float lam = 0.0f, egt = 0.0f;
+    const bool hasLam = snap.get(SignalId::WboLambda, lam);  // 表示に使う λ（SYS-03）
+    const bool hasEgt = snap.get(SignalId::Egt1, egt);
+    Serial.printf(
+        "rx=%lu f/s=%lu unk=%lu dlc=%lu ovf=%lu tec=%lu rec=%lu | lam=%s%.3f egt=%s%.0f | "
+        "ageL=%lu ageE=%lu snapFail=%lu | draw=%luus (max %lu fps) heap=%u | sensor=%s %d\n",
+        (unsigned long)st.rxFrames, (unsigned long)st.framesPerSec, (unsigned long)st.unknownId,
+        (unsigned long)st.badDlc, (unsigned long)st.queueOverflow, (unsigned long)st.tec,
+        (unsigned long)st.rec, hasLam ? "" : "(none)", lam, hasEgt ? "" : "(none)", egt,
+        (unsigned long)snap.ageMs(SignalId::WboLambda), (unsigned long)snap.ageMs(SignalId::Egt1),
+        (unsigned long)g_store.snapshotFailures(), (unsigned long)frameUs,
+        (unsigned long)(frameUs ? 1000000UL / frameUs : 0), static_cast<unsigned>(ESP.getFreeHeap()),
+        kSensorNames[static_cast<int>(sensor.state)],
+        sensor.hasTemp ? static_cast<int>(sensor.tempC + 0.5f) : -1);
+#endif
 }
 
 }  // namespace
@@ -376,57 +472,39 @@ void setup() {
 
     Serial.begin(115200);
     delay(50);
-    Serial.printf("\ncircle_meter %s\n", CM_FW_VERSION);
 
     // SWD-09: 設定 -> CAN 開始 -> 受信タスク -> 画面、の順。
     // SYS-18 によりスプラッシュ表示中も受信していなければならない。
     g_cfg = defaultConfig();
-
-#ifndef CM_ENABLE_CAN_SIM
-    if (!g_can.begin(g_cfg)) {
-        Serial.println("CAN init FAILED");
-    }
-#endif
-
-    // 選ばれた文字サイズをログに出す（レイアウト調整の確認用）
-    {
-        auto& dd    = M5Dial.Display;
-        const int r = kRingInner - kTextMargin;
-        struct {
-            const char* s;
-            int yc;
-            int maxH;
-            bool num;
-        } probes[] = {
-            {"14.7", kMainY, kMainMaxH, true},
-            {"1.000", kMainY, kMainMaxH, true},
-            {"845C", kEgtY, kEgtMaxH, false},
-        };
-        for (auto& pr : probes) {
-            const TextFit f = fitText(dd, pr.s, pr.yc, r, pr.num, pr.maxH);
-            dd.setFont(f.font);
-            dd.setTextSize(f.size);
-            Serial.printf("fit '%s': size=%.1f w=%d h=%d\n", pr.s, f.size, dd.textWidth(pr.s),
-                          dd.fontHeight());
-        }
-    }
+    // SWR-67 / SWD-14: user/user_config.h の値を重ねる（範囲外の組は既定値のまま）。
+    // 表示デザイン（USER_DIAL_STYLE）は M5Dial ではリングのみなので使わない（SWR-68）
+    g_userResult = applyUserConfig(g_cfg, userConfigFromBuild());
+    printBanner();
 
     // 全画面スプライト 240x240x16bit = 112.5 KB。確保できなければ直接描画へフォールバックする。
     g_canvas.setColorDepth(16);
     g_canvas.setPsram(false);  // DOC-12 §7.1: PSRAM は無い
     g_canvasReady = g_canvas.createSprite(240, 240);
-    Serial.printf("offscreen canvas: %s (free heap %u)\n", g_canvasReady ? "ok" : "FAILED",
-                  (unsigned)ESP.getFreeHeap());
 
-    xTaskCreatePinnedToCore(canRxTask, "can_rx", 4096, nullptr, 10, nullptr, 0);
-    xTaskCreatePinnedToCore(canHealthTask, "can_health", 3072, nullptr, 5, nullptr, 0);
+#ifdef CM_ENABLE_CAN_SIM
+    xTaskCreatePinnedToCore(simTask, "sim", 4096, nullptr, 10, nullptr, 0);
+#else
+    if (!g_can.begin(g_cfg)) {
+        Serial.println("CAN init FAILED");
+    }
+    startCanRxTask(g_can, g_store, g_cfg);
+    startCanHealthTask(g_can);
+#endif
 
-    // オープニング画面（SYS-18）。CAN 受信タスクは既に走っている。
+    // オープニング画面（SYS-18）。信号源は既に走っている。
     showSplash(g_cfg.brightness);
 
     // 最初の本画面を描いてからバックライトを戻す（黒画面の一瞬を見せない）
-    drawBringupScreen(g_store.snapshot(millis()));
+    drawMainScreen(g_filter.update(g_store.snapshot(millis()), g_cfg));
     fadeBacklight(0, brightnessPwm(g_cfg.brightness), 200);
+
+    g_uiReady = true;
+    printUiReady();
 }
 
 void loop() {
@@ -439,7 +517,7 @@ void loop() {
     if (static_cast<int32_t>(now - nextUiMs) >= 0) {
         nextUiMs          = now + kUiPeriodMs;
         const uint32_t t0 = micros();
-        drawBringupScreen(g_store.snapshot(now));
+        drawMainScreen(g_filter.update(g_store.snapshot(now), g_cfg));
         g_frameUsTotal += micros() - t0;
         g_frameCount++;
         if (g_frameCount >= 64) {  // 直近 64 フレームの平均に落とす
@@ -453,23 +531,11 @@ void loop() {
         g_cfg.showAfr = !g_cfg.showAfr;
     }
 
+    handleSerialKeys();
+
     if (static_cast<int32_t>(now - nextLogMs) >= 0) {
-        nextLogMs       = now + 1000;
-        const auto& s   = g_can.stats();
-        const auto snap = g_store.snapshot(now);
-        float lam = 0.0f, egt = 0.0f;
-        const bool hasLam      = snap.get(SignalId::Lambda1, lam);
-        const bool hasEgt      = snap.get(SignalId::Egt1, egt);
-        const uint32_t frameUs = g_frameCount ? g_frameUsTotal / g_frameCount : 0;
-        Serial.printf(
-            "rx=%lu f/s=%lu unk=%lu dlc=%lu ovf=%lu tec=%lu rec=%lu | lam=%s%.3f egt=%s%.0f | "
-            "ageL=%lu ageE=%lu snapFail=%lu | draw=%luus (max %lu fps) heap=%u\n",
-            (unsigned long)s.rxFrames, (unsigned long)s.framesPerSec, (unsigned long)s.unknownId,
-            (unsigned long)s.badDlc, (unsigned long)s.queueOverflow, (unsigned long)s.tec,
-            (unsigned long)s.rec, hasLam ? "" : "(none)", lam, hasEgt ? "" : "(none)", egt,
-            (unsigned long)snap.ageMs(SignalId::Lambda1), (unsigned long)snap.ageMs(SignalId::Egt1),
-            (unsigned long)g_store.snapshotFailures(), (unsigned long)frameUs,
-            (unsigned long)(frameUs ? 1000000UL / frameUs : 0), (unsigned)ESP.getFreeHeap());
+        nextLogMs = now + 1000;
+        printStatus(now, g_frameCount ? g_frameUsTotal / g_frameCount : 0);
     }
 
     delay(2);

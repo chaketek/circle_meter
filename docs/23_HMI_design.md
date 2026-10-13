@@ -5,7 +5,7 @@
 | 文書ID | `DOC-23` |
 | プロセス | SWE.2（ユーザインタフェース設計） |
 | 版 | 0.1 (Draft) |
-| 最終更新 | 2026-10-11 |
+| 最終更新 | 2026-10-12 |
 
 ---
 
@@ -244,7 +244,7 @@ CAN は受信しているが λ が無効のとき、`NO SIGNAL` の代わりに
 | 項目 | 仕様 |
 |---|---|
 | 構成 | 中央にロゴ、下部に `circle_meter` と FW 版数（`v0.1.0-3-gabc1234`） |
-| ロゴ形式 | `assets/logo_src.png` を `tools/make_logo.py` で RGB565 の C++ 配列に変換して保持する。M5Dial 版は `assets/logo.cpp`（204x87 px / 34.7 KB）。**LCD-2.1 版は `assets/lcd21/logo.cpp` / `logo.h`（394x167 px / 129 KB）**。生成: `python tools/make_logo.py --out-c assets/lcd21/logo.cpp --out-h assets/lcd21/logo.h --max-width 408 --max-height 174`（元画像の縦横比で 394x167 になる）。Flash 上の const 配列を LVGL の `lv_image_dsc_t`（RGB565）から直接参照し、RAM へコピーしない |
+| ロゴ形式 | `assets/logo_src.png` を `tools/make_logo.py` で RGB565 の C++ 配列に変換して保持する。M5Dial 版は `assets/logo.cpp`（204x86 px / 34.3 KB。2026-10-13 に LCD-2.1 と同じ反転方式で作り直し、縁のジャギーを消した）。**LCD-2.1 版は `assets/lcd21/logo.cpp` / `logo.h`（394x167 px / 129 KB）**。生成: `python tools/make_logo.py --out-c assets/lcd21/logo.cpp --out-h assets/lcd21/logo.h --max-width 408 --max-height 174`（元画像の縦横比で 394x167 になる）。Flash 上の const 配列を LVGL の `lv_image_dsc_t`（RGB565）から直接参照し、RAM へコピーしない |
 | アニメーション | 0.0–0.8 s フェードイン → 1.6 s 保持 → 0.6 s フェードアウト（合計 3.0 s）。**バックライトの LEDC PWM（GPIO6）のランプで実現**する（画素のアルファ合成は 16 bit 階調では縞が出るうえ CPU を食う） |
 | 短縮条件 | フェードイン完了時点で CAN 受信済みなら保持を 1.6 s → 0.4 s に短縮する |
 | 差し替え | 作者: `assets/logo_src.png` を置き換えて上記の生成コマンドを実行する。**配布先ユーザー**: `user/logo.png` を置いて `python tools/make_logo.py --user` を実行する（`user/logo.cpp` / `logo.h` ができ、ビルドで自動的に差し替わる。`SWD-14`） |
@@ -304,6 +304,20 @@ CAN は受信しているが λ が無効のとき、`NO SIGNAL` の代わりに
 
 > 警告と危険の色（`WARN` / `DANGER` / `LEAN_HEAVY`）は、周辺視野で気づけること（`STK-01` / `SYS-16`）が目的。
 > 変える場合も、盤面・背景と見分けがつく明るい色にすること（手順書 `docs/user/05_customize.md` で注意する）。
+
+### 8.2 M5Dial 版（`SWR-68`）
+
+M5Dial（240×240）は**リングのデザインのみ**。配色は §8 / §8.1 と同じ定数（`include/theme_colors.h`）を使い、
+`USER_COLOR_*` のうちリング・λ ゾーン・EGT・文字・背景の色が効く（指針式 A の盤面・針などの色は使わない）。
+
+| 要素 | 位置（垂直中心） | 書体 |
+|---|---|---|
+| 鮮度 / 単位 | y = 34 / 52 | Font0 |
+| 主数値 | y = 104 | 円に収まる最大（数字用の Font8 / Font6） |
+| **λ センサの状態**（λ が無効なとき） | **y = 136** | 円に収まる最大の ASCII（高さ 16 px まで）。色は §6.1 と同じ |
+| EGT | y = 168 | 円に収まる最大の ASCII。単位は `C`（`°` の字形が無い） |
+| 診断（f/s・fps） | y = 202 | Font0 |
+| 起動ロゴ | 中央から 8 px 上。枠は 204×140 | `user/logo.png` から機種ごとに変換（`SWD-14`） |
 
 ## 9. フォント計画
 

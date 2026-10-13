@@ -10,7 +10,7 @@ description: circle_meter（丸型の空燃比・排気温度メータ）の表�
 
 ## 守ること
 
-- **書き換えてよいのは `user/` フォルダの中だけ**（`user_config.h`、`logo.png`、変換で作る `logo.cpp` / `logo.h` / `logo_preview.png`）。
+- **書き換えてよいのは `user/` フォルダの中だけ**（`user_config.h`、`logo.png`、変換で作る `generated/` と `logo_preview_*.png`）。
   `lib/`・`src/`・`include/`・`platformio.ini`・`docs/` は変えない。`user_config.h` で変えられないことを頼まれたら、
   できないことを正直に伝え、作者（GitHub の Issue）に相談する方法を案内する。
 - **`user_config.example.h` は編集しない**（作者の更新で上書きされる）。
@@ -33,12 +33,12 @@ description: circle_meter（丸型の空燃比・排気温度メータ）の表�
 | 言われそうなこと | 項目 |
 |---|---|
 | AFR / λ で表示 | `USER_SHOW_AFR`（1 = AFR、0 = λ） |
-| 針のメータ / リングのメータ | `USER_DIAL_STYLE`（`USER_DIAL_NEEDLE_A` / `USER_DIAL_RING`） |
+| 針のメータ / リングのメータ | `USER_DIAL_STYLE`（`USER_DIAL_NEEDLE_A` / `USER_DIAL_RING`）。**M5Dial はリングのみ**なので変えられないと伝える |
 | 明るさ | `USER_BRIGHTNESS`（1〜5） |
 | E85 など燃料が違う | `USER_STOICH`（理論空燃比） |
 | 緑の範囲を広く・狭く | `USER_LAMBDA_*_MAX`（λ の値。小さい順にすること） |
 | 排気温度の警告 | `USER_EGT_WARN_C` / `USER_EGT_DANGER_C`（警告 < 危険） |
-| 針・盤面・目盛り・文字の色 | `USER_COLOR_NEEDLE` / `USER_COLOR_DIAL_*` / `USER_COLOR_TEXT*` |
+| 針・盤面・目盛り・文字の色 | `USER_COLOR_NEEDLE` / `USER_COLOR_DIAL_*`（LCD-2.1 の指針式だけ）/ `USER_COLOR_TEXT*` / `USER_COLOR_BG`（M5Dial の画面全体の背景） |
 | ゾーンの色 | `USER_COLOR_RICH_HEAVY` 〜 `USER_COLOR_LEAN_HEAVY` |
 | 車に繋いでも表示されない（通信速度） | `USER_CAN_BITRATE_KBPS`（250 / 500 / 1000） |
 | rusEFI のベース ID を変えている | `USER_CAN_BASE_ID` |
@@ -67,15 +67,15 @@ description: circle_meter（丸型の空燃比・排気温度メータ）の表�
 2. 画像を Read で見て、種類を判断する。
    - 黒い背景・透過背景・写真やカラーのロゴ → そのまま: `python tools/make_logo.py --user`
    - **白い背景に黒（と 1 色）の文字** → 黒地に反転: `python tools/make_logo.py --user --invert`
-3. `user/logo_preview.png`（丸い画面に置いた見え方）を Read で見て、ユーザーにもファイルを開いて見てもらう。
+3. 使っている機種の `user/logo_preview_lcd21.png` または `user/logo_preview_m5dial.png`（丸い画面に置いた見え方）を Read で見て、ユーザーにもファイルを開いて見てもらう。変換は両方の機種の分が一度にできる（`user/generated/<機種>/`）。
    - 白い四角が浮いている → `--invert` を試す
-   - 小さすぎる・余白が多い → 画像の余白を切ってもらうか、横長の画像にしてもらう（枠は 408x174）
+   - 小さすぎる・余白が多い → 画像の余白を切ってもらうか、横長の画像にしてもらう（枠は LCD-2.1 が 408x174、M5Dial が 204x140）
 4. 手順 4 で書き込む。起動直後の 3 秒にロゴが出る。
 
 ### 6. 元に戻す
 
 - 1 項目だけ: その行の先頭に `// ` を付け直す。
 - 全部: `user/user_config.h` を `user/user_config.example.h` で上書きする（**上書き前に確認する**）。
-- ロゴ: `user/logo.cpp` と `user/logo.h` を削除する（`logo.png` は残してよい）。削除の前に確認する。
+- ロゴ: `user/generated/` フォルダを削除する（`logo.png` は残してよい）。削除の前に確認する。
 
 戻したら手順 4 で書き込む。

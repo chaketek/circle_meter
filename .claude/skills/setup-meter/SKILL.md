@@ -55,24 +55,28 @@ PowerShell で、**バックグラウンド実行**にして待つ（初回は�
 python -m platformio run -e lcd21_sim
 ```
 
+M5Dial を使う人は `-e m5dial_sim` にする（機種がまだ分からなければ `lcd21_sim` でよい。道具の多くは共通で、M5Dial 用の道具は最初の書き込みのときに追加で取得される）。
+
 待っている間に「初回だけ時間がかかります。2 回目からは 1〜2 分です」と伝える。
 失敗したら出力の最後の 30 行を読み、`docs/user/08_troubleshooting.md` の「ビルドが失敗する」に沿って対処する。
 推測で設定ファイルやコードを書き換えない。
 
 ### 5. 本体を繋いで COM ポートを確かめる
 
-ユーザーに頼む: 「本体の **UART と書かれた USB-C** に、**データ通信できる** USB ケーブルで PC と繋いでください。
-もう一方の USB-C（ネイティブ USB）には何も挿さないでください」。
+まず本体が **LCD-2.1 と M5Dial のどちらか**を聞く（以降の Skill でも使うので覚えておく）。
+
+- LCD-2.1: 「本体の **UART と書かれた USB-C** に、**データ通信できる** USB ケーブルで PC と繋いでください。もう一方の USB-C（ネイティブ USB）には何も挿さないでください」
+- M5Dial: 「M5Dial の USB-C に、**データ通信できる** USB ケーブルで PC と繋いでください」
 
 ```powershell
 python -m platformio device list
 ```
 
-`USB-Enhanced-SERIAL CH343`（または VID 1A86）の COM 番号が見えれば合格。見えなければ:
+LCD-2.1 は `USB-Enhanced-SERIAL CH343`（VID 1A86）、M5Dial は `USB JTAG/serial debug unit` など VID 303A の COM 番号が見えれば合格。見えなければ:
 
 1. ケーブルを別のもの（データ通信対応）に替える
-2. 挿す口が UART 側か確かめる
-3. それでも出なければ、WCH 社の CH343 ドライバが要る（ユーザー自身にダウンロードしてもらう。`docs/user/08_troubleshooting.md`）
+2. LCD-2.1 なら挿す口が UART 側か確かめる
+3. LCD-2.1 でそれでも出なければ、WCH 社の CH343 ドライバが要る（ユーザー自身にダウンロードしてもらう。`docs/user/08_troubleshooting.md`）。M5Dial はドライバ不要
 
 ### 6. 終わったら
 

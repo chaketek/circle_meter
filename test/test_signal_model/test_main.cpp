@@ -1,5 +1,5 @@
 // SWE.4 ユニット検証: 信号モデル（鮮度・単位換算・設定）
-// UT-05 〜 UT-09, UT-11 〜 UT-21, UT-23, UT-24  (docs/30_test_strategy.md §2)
+// UT-05 〜 UT-09, UT-11 〜 UT-21, UT-23 〜 UT-25  (docs/30_test_strategy.md §2)
 #include <unity.h>
 
 #include <atomic>
@@ -7,12 +7,14 @@
 #include <cstring>
 #include <initializer_list>
 #include <new>
+#include <string>
 #include <thread>
 
 #include "button_fsm.h"
 #include "config.h"
 #include "display_filter.h"
 #include "display_policy.h"
+#include "display_text.h"
 #include "lambda_sensor_state.h"
 #include "ring_geometry.h"
 #include "rusefi_decoder.h"
@@ -971,6 +973,54 @@ void test_UT24_egt_warn_above_danger_rejected() {
     TEST_ASSERT_TRUE(validate(cfg));
 }
 
+// ---------------------------------------------------------------- UT-25 λ センサの状態の文字（SWR-51 /
+// SWR-68）
+
+namespace {
+std::string sensorText(LambdaSensorState st, bool hasTemp, float tempC, const char* deg = kDegCUtf8) {
+    char buf[32];
+    formatSensorStatus(buf, sizeof(buf), LambdaSensorInfo{st, hasTemp, tempC}, deg);
+    return std::string(buf);
+}
+}  // namespace
+
+void test_UT25_texts_match_hmi_spec() {
+    TEST_ASSERT_EQUAL_STRING("", sensorText(LambdaSensorState::Ok, false, 0).c_str());
+    TEST_ASSERT_EQUAL_STRING("NO SIGNAL", sensorText(LambdaSensorState::NoSignal, false, 0).c_str());
+    TEST_ASSERT_EQUAL_STRING("SENSOR OFF", sensorText(LambdaSensorState::SensorOff, true, 25).c_str());
+    TEST_ASSERT_EQUAL_STRING("NO WBO DATA", sensorText(LambdaSensorState::NoWbo, false, 0).c_str());
+    TEST_ASSERT_EQUAL_STRING("SENSOR FAULT: NO HEAT",
+                             sensorText(LambdaSensorState::FaultNoHeat, false, 0).c_str());
+    TEST_ASSERT_EQUAL_STRING("SENSOR FAULT: OVERHEAT",
+                             sensorText(LambdaSensorState::FaultOverheat, true, 1100).c_str());
+    TEST_ASSERT_EQUAL_STRING("SENSOR FAULT: UNDERHEAT",
+                             sensorText(LambdaSensorState::FaultUnderheat, true, 500).c_str());
+}
+
+void test_UT25_temperature_and_degree_suffix() {
+    // UTF-8 の度記号（LCD-2.1 / LVGL）と ASCII の C（M5Dial / M5GFX）
+    TEST_ASSERT_EQUAL_STRING(
+        "WARMING UP 512\xC2\xB0"
+        "C",
+        sensorText(LambdaSensorState::WarmingUp, true, 511.6f).c_str());
+    TEST_ASSERT_EQUAL_STRING("WARMING UP 512C",
+                             sensorText(LambdaSensorState::WarmingUp, true, 511.6f, kDegCAscii).c_str());
+    TEST_ASSERT_EQUAL_STRING("SENSOR CHECK 780C",
+                             sensorText(LambdaSensorState::Check, true, 780.0f, kDegCAscii).c_str());
+    // 温度が無いときは数字を出さない
+    TEST_ASSERT_EQUAL_STRING("WARMING UP",
+                             sensorText(LambdaSensorState::WarmingUp, false, 0, kDegCAscii).c_str());
+    TEST_ASSERT_EQUAL_STRING("SENSOR CHECK", sensorText(LambdaSensorState::Check, false, 0).c_str());
+}
+
+void test_UT25_small_buffer_does_not_overflow() {
+    char buf[8];
+    std::memset(buf, 'x', sizeof(buf));
+    formatSensorStatus(buf, sizeof(buf), LambdaSensorInfo{LambdaSensorState::FaultUnderheat, false, 0});
+    TEST_ASSERT_EQUAL_STRING("SENSOR ", buf);  // 7 文字 + 終端で切れる
+    formatSensorStatus(nullptr, 0, LambdaSensorInfo{LambdaSensorState::NoSignal, false, 0});  // 落ちないこと
+}
+
 int main(int, char**) {
     UNITY_BEGIN();
     RUN_TEST(test_UT05_zone_boundaries_exact);
@@ -1035,5 +1085,8 @@ int main(int, char**) {
     RUN_TEST(test_UT24_out_of_range_group_keeps_default);
     RUN_TEST(test_UT24_non_monotonic_zones_rejected_as_a_whole);
     RUN_TEST(test_UT24_egt_warn_above_danger_rejected);
+    RUN_TEST(test_UT25_texts_match_hmi_spec);
+    RUN_TEST(test_UT25_temperature_and_degree_suffix);
+    RUN_TEST(test_UT25_small_buffer_does_not_overflow);
     return UNITY_END();
 }
