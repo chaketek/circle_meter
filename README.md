@@ -210,4 +210,6 @@ TunerStudio で以下を確認してください（[DOC-13 §5](docs/13_ICD_ruse
 
 ## ライセンス
 
-未定（個人利用）。
+[MIT ライセンス](LICENSE)（Copyright (c) 2026 chaketek）。コード・ツール・文書・起動ロゴが対象です。
+
+同梱のフォント（B612 Mono・Montserrat。SIL Open Font License 1.1）と、ビルドのときに取得するライブラリ（LVGL・Arduino-ESP32〔LGPL 2.1〕・ESP32_Display_Panel〔Apache 2.0〕など）は、それぞれのライセンスに従います。一覧とファームウェアを配布するときの注意は [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) を見てください。

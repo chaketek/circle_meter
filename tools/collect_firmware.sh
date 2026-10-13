@@ -8,6 +8,9 @@
 #   firmware.factory.bin : ブートローダ・パーティション込みの完成イメージ。アドレス 0x0 に書く（pioarduino の環境だけ作られる）
 #   bootloader.bin / partitions.bin / firmware.bin : 個別に書く場合（0x0 / 0x8000 / 0x10000）
 #   firmware.elf : 落ちたときのスタックトレースの解析用
+#
+# ビルドで取得したライブラリのライセンス文も THIRD-PARTY-LICENSE-<ライブラリ名>.txt として集める
+# （ファームウェアの配布に Apache-2.0 などのライセンス文を添えるため。THIRD_PARTY_NOTICES.md）。
 set -euo pipefail
 
 out="$1"
@@ -22,6 +25,14 @@ for env in "$@"; do
     for f in firmware.factory.bin bootloader.bin partitions.bin firmware.bin firmware.elf; do
         if [ -f "$dir/$f" ]; then
             cp "$dir/$f" "$out/$env-$f"
+        fi
+    done
+    for lib in .pio/libdeps/"$env"/*/; do
+        [ -d "$lib" ] || continue
+        name=$(basename "$lib")
+        lic=$(find "$lib" -maxdepth 1 -type f \( -iname 'licen[cs]e*' -o -iname 'copying*' \) | head -n 1)
+        if [ -n "$lic" ]; then
+            cp "$lic" "$out/THIRD-PARTY-LICENSE-$name.txt"
         fi
     done
 done
