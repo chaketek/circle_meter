@@ -215,12 +215,12 @@ flowchart LR
     A["PR 作成 / push"] --> B["lint: clang-format 差分チェック"]
     A --> C["guard: 禁止 API 検査\n(twai_transmit 等)"]
     A --> D["test: pio test -e native\nUT-* 全件"]
-    A --> E["build: pio run -e m5dial\n+ サイズレポート"]
+    A --> E["build: M5Dial / LCD-2.1\n全環境 + サイズレポート"]
     B & C & D & E --> F{"全て green?"}
-    F -->|No| G["マージ不可"]
-    F -->|Yes| H["firmware.bin を artifact 保存"]
+    F -->|No| G["マージ不可\n（ブランチ保護）"]
+    F -->|Yes| H["機種・環境ごとの\nファームウェアを artifact 保存"]
     H --> I["main へマージ"]
-    I --> J["タグ push 時: GitHub Release 作成\n+ firmware.bin 添付"]
+    I --> J["タグ push 時: GitHub Release 作成\n+ 両機種のファームウェア添付"]
     J --> K["★ 実機書き込みはローカル\ntools/flash.ps1"]
 ```
 
@@ -228,12 +228,25 @@ flowchart LR
 
 | ジョブ | 実行環境 | 内容 | 失敗時 |
 |---|---|---|---|
-| `lint` | ubuntu-latest | `clang-format --dry-run -Werror`（pip の 23.1.1。§2.1） | マージ不可 |
+| `lint` | ubuntu-latest | `clang-format --dry-run -Werror`（pip の 23.1.1。§2.1）。対象は `src/` `lib/` `test/` と **`include/` の自前ヘッダ**（`git ls-files` で生成物の `version.h` を除く） | マージ不可 |
 | `guard` | ubuntu-latest | `bash tools/guard.sh`（`twai_transmit` の混入 `RSK-06`、`TWAI_MODE_NO_ACK` `RSK-10`、ドメイン層の HW 依存 `DEC-06`、スケーリング定数の直書き `SWD-01`） | マージ不可 |
 | `test` | ubuntu-latest | `pio test -e native` | マージ不可 |
-| `build` | ubuntu-latest | `pio run -e m5dial -e m5dial_sim` + Flash/RAM 使用量をジョブサマリに出力 | マージ不可 |
-| `build-lcd21` | ubuntu-latest | `pio run -e lcd21 -e lcd21_sim`（pioarduino。LVGL / ESP32_Display_Panel を含む） | マージ不可（初回の実績を見て判断） |
-| `release` | ubuntu-latest | タグ push 時のみ。`firmware.bin` `firmware.elf` を Release に添付 | — |
+| `build`（表示名 `build (M5Dial)`） | ubuntu-latest | `pio run -e m5dial -e m5dial_sim` + Flash/RAM 使用量をジョブサマリに出力。成果物を artifact `firmware-m5dial-<sha>` に保存 | マージ不可 |
+| `build-lcd21` | ubuntu-latest | `pio run -e lcd21 -e lcd21_sim -e lcd21_1m`（pioarduino。LVGL / ESP32_Display_Panel を含む）。成果物を artifact `firmware-lcd21-<sha>` に保存 | マージ不可 |
+| `release` | ubuntu-latest | タグ push 時のみ。**全ジョブの合格が条件**。両機種の成果物を Release に添付する（下表） | — |
+
+成果物は `tools/collect_firmware.sh` が `<環境名>-<元の名前>` で集める（Release はファイル名だけで添付するので、名前の重なりを避ける）。
+
+| ファイル | 内容 |
+|---|---|
+| `<環境>-firmware.factory.bin` | ブートローダ・パーティション込みの完成イメージ。0x0 に書く。**LCD-2.1（pioarduino）の環境だけ** |
+| `<環境>-bootloader.bin` / `-partitions.bin` / `-firmware.bin` | 個別に書く場合（0x0 / 0x8000 / 0x10000）。M5Dial はこちら |
+| `<環境>-firmware.elf` | 落ちたときのスタックトレースの解析用 |
+
+**ブランチ保護（2026-10-13）**: `main` に、上の `lint` / `guard` / `test` / `build (M5Dial)` / `build (LCD-2.1 / pioarduino)` の合格を
+必須チェックとして設定し、管理者にも適用する。CI が落ちた・終わっていない PR はマージできず、`main` への直接の push もできない
+（以前は設定が無く、CI の結果を待たずにマージできてしまっていた。#6〜#9 で lint の不合格に気づかなかった）。
+ブランチが `main` に追いついていることは求めない（`main` の更新のたびに作り直しが要るため。マージ後の `main` でも CI が走る）。
 
 ### 4.3 実機への書き込みが CI に含まれない理由
 
