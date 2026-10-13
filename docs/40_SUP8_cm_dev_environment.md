@@ -248,6 +248,19 @@ flowchart LR
 （以前は設定が無く、CI の結果を待たずにマージできてしまっていた。#6〜#9 で lint の不合格に気づかなかった）。
 ブランチが `main` に追いついていることは求めない（`main` の更新のたびに作り直しが要るため。マージ後の `main` でも CI が走る）。
 
+設定は GitHub の REST API で入れた（画面では Settings → Branches の `main` のルールとして見える・変えられる）:
+
+```bash
+gh api -X PUT repos/chaketek/circle_meter/branches/main/protection --input protect.json
+```
+
+`protect.json` は `required_status_checks.checks` に上の 5 つのジョブの**表示名**、`strict: false`、`enforce_admins: true`、
+`required_pull_request_reviews: null`、`restrictions: null`。確認は `gh api repos/chaketek/circle_meter/branches/main/protection`、
+外すときは `-X DELETE`。
+
+> **CI のジョブの表示名（`name:`）を変えたら、必須チェックの名前も同時に変えること。** 必須チェックは名前で照合するので、
+> 古い名前のままだと「来ないチェック」を待ち続け、どの PR もマージできなくなる。
+
 ### 4.3 実機への書き込みが CI に含まれない理由
 
 GitHub Actions のランナーは M5Dial に物理接続できない。
