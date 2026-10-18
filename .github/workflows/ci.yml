@@ -158,12 +158,16 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
       # 両機種の成果物（firmware-m5dial-* / firmware-lcd21-*）を 1 つのフォルダへ
       - uses: actions/download-artifact@v4
         with:
           pattern: firmware-*-${{ github.sha }}
           path: dist
           merge-multiple: true
+      # ライセンス（本体の MIT・第三者の告知・同梱フォントの OFL）も添付する（THIRD_PARTY_NOTICES.md）
+      - name: ライセンス文を添える
+        run: cp LICENSE THIRD_PARTY_NOTICES.md assets/fonts/B612-OFL.txt assets/fonts/Montserrat-OFL.txt dist/
       - uses: softprops/action-gh-release@v2
         with:
           files: dist/*
