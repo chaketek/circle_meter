@@ -368,18 +368,19 @@ Grove ケーブルで Mini CAN と M5Dial の **PORT.A** を直接繋ぐ（2026-
 | Grove 線色 | Mini CAN | M5Dial PORT.A | ファームウェア設定 |
 |---|---|---|---|
 | 黒 | GND | GND | — |
-| 赤 | 5V | 5V | **繋ぎ方は確認中**（下記・`OPN-21`） |
+| 赤 | 5V（**M5Dial から Mini CAN へ**） | 5V | — |
 | 黄 | CAN_TX | **G13** | `CM_TWAI_TX_GPIO=13` |
 | 白 | CAN_RX | **G15** | `CM_TWAI_RX_GPIO=15` |
 
 - **電源は M5Dial の DC 入力（6–36 V）に車両の 12V を入れる**（2026-10-18 改訂）。当初は Mini CAN の 5V を Grove で受ける構成にしたが、
   車両で**画面が点かず動かなかった**（`OPN-20` 不成立）。LCD-2.1（12PIN の `VBus`）は同じ 5V で動いており（`OPN-14` 成立）、
   M5Dial の PORT.A の 5V は本体へ電源を入れる経路になっていないとみられる。
-- **Mini CAN の電源と Grove の赤（5V）の扱いは確認中**（`OPN-21`）。M5Dial を DC 入力で動かすと、PORT.A の 5V は M5Dial が出す側になる。
-  Mini CAN も端子台に 12V が入れば Grove へ 5V を出すので、赤を繋ぐと 5V の電源どうしが直結になる。
-  - **案 A（推奨）**: 赤を繋がない（GND・TX・RX の 3 本）。Mini CAN は端子台の 12V で、M5Dial は DC 入力の 12V で、それぞれ 5V を作る
-  - 案 B: Mini CAN の端子台に 12V を入れず、M5Dial の PORT.A の 5V で Mini CAN を動かす（Mini CAN が Grove の 5V だけで動くかは未確認）
-- PC と USB で繋いでいる間は、Mini CAN の端子台に 12V を入れない（LCD-2.1 と同じ。USB の 5V と並ぶ）。
+- **Mini CAN は M5Dial の PORT.A の 5V で動かし、Mini CAN の端子台には 12V を入れない**（CAN_H / CAN_L だけ。`OPN-21` の案 B。
+  2026-10-18 に作者の車両で Mini CAN に電源が入る〔LED 点灯〕ことを確認）。Grove は 4 本とも繋ぐ。5V を出すのは M5Dial だけなので、
+  5V の電源どうしがぶつからない。LCD-2.1（Mini CAN が 12V から 5V を作って本体へ渡す）とは**電源の向きが逆**になる。
+  - 車両での CAN 受信は未確認。電気的には 2026-10-13 のベンチ（USB 給電の M5Dial の PORT.A から Mini CAN を動かし、160 f/s で受信。`IT-18`）と同じ構成
+  - 検討した案 A（赤を繋がず、Mini CAN も端子台の 12V で動かす）は、配線が増えるだけなので採らない
+- M5Dial の構成では Mini CAN の端子台に 12V を入れない（上記）。M5Dial の DC 入力と USB を同時に繋いでよいかは確かめていないので、PC と繋いで作業するときは DC 入力を外す。
 - 書き込み・ログは M5Dial の USB-C（ESP32-S3 のネイティブ USB。VID 303A）。LCD-2.1 と違い、ポートを開いても本体はリセットされず、
   起動直後の出力は PC が開く前に流れてしまうことがある。このため起動ログは `i` で出し直せるようにした（`SWR-68`）。
 
