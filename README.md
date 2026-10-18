@@ -124,7 +124,7 @@ python -m platformio test -e native
 | Grove 線色 | CAN Unit | 本体（12PIN） | **本体側ケーブルの線色** | 備考 |
 |---|---|---|---|---|
 | 黒 | GND | GND | **黒** | |
-| 赤 | **5V 出力**（端子台入力から生成、最大 700 mA） | **VBus** | **赤**（VCC 5V） | 車両の 12V から給電して成立するかは未検証（`OPN-14` / `RSK-12`） |
+| 赤 | **5V 出力**（端子台入力から生成、最大 700 mA） | **VBus** | **赤**（VCC 5V） | 車両の 12V から Mini CAN 経由で給電して動作を確認（2026-10-18。`OPN-14`）。消費電流は未測定 |
 | 黄 | CAN_TX | **D+ (GPIO20)** | **黄**（CAN TX） | `CM_TWAI_TX_GPIO=20`。ベンチで通信を確認（`OPN-13`） |
 | 白 | CAN_RX | **D− (GPIO19)** | **緑**（CAN RX） | `CM_TWAI_RX_GPIO=19`。同上 |
 
