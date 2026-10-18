@@ -138,7 +138,7 @@ C++17 / `.clang-format`（Google ベース・インデント 4・列幅 110）/ 
 - `OPN-12` 480×480 RGB の実描画性能。**λ ページは LVGL で平均 39 fps**（`SYS-12` 達成）。残り: CAN 受信中・NVS 書き込み中・他ページ
 - `OPN-13` CAN を GPIO20(TX) / GPIO19(RX)（12PIN の D+/D−）に割り当てる案の実機検証。起動直後にバスへ何も出ないこと（`IT-04`）
 - `OPN-14` 12PIN の `VBus` へ Mini CAN の 5V。**車両で成立を確認（2026-10-18）**。消費電流は未測定
-- `OPN-21` M5Dial を DC 入力（車両 12V）で動かすときの Mini CAN の電源と Grove の赤（5V）の扱い。**Mini CAN の 5V（PORT.A）では M5Dial は動かない**（`OPN-20` 不成立。DOC-12 §8.5）
+- `OPN-21` M5Dial の車両の電源: **DC 入力に 12V、Mini CAN は M5Dial の PORT.A の 5V で動かす**（端子台に 12V を入れない。LCD-2.1 と電源の向きが逆）。2026-10-18 に電源は確認、車両での CAN 受信は未確認（DOC-12 §8.5）
 - `OPN-01` Mini CAN Unit の終端抵抗の有無
 - `OPN-03` rusEFI 側で `Lambda1` / `EGT1` が構成済みか、`canSleepPeriodMs` の実設定値
 
